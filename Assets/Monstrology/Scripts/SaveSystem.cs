@@ -1,0 +1,80 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Monstrology
+{
+    [Serializable]
+    public class StringIntEntry
+    {
+        public string id;
+        public int value;
+
+        public StringIntEntry(string id, int value)
+        {
+            this.id = id;
+            this.value = value;
+        }
+    }
+
+    [Serializable]
+    public class GameProgress
+    {
+        public int version = 1;
+        public int coins = 120;
+        public int energy = 20;
+        public string currentBiome = BiomeType.Forest.ToString();
+        public int explorationCount;
+        public int mutationCount;
+        public int totalCreaturesFound;
+        public List<string> unlockedBiomes = new List<string>();
+        public List<StringIntEntry> creatures = new List<StringIntEntry>();
+        public List<StringIntEntry> items = new List<StringIntEntry>();
+        public List<StringIntEntry> tracks = new List<StringIntEntry>();
+        public List<string> claimedQuests = new List<string>();
+        public List<string> purchasedHints = new List<string>();
+    }
+
+    public static class SaveSystem
+    {
+        private const string SaveKey = "Monstrology.Progress.v1";
+
+        public static void Save(GameProgress progress)
+        {
+            PlayerPrefs.SetString(SaveKey, JsonUtility.ToJson(progress));
+            PlayerPrefs.Save();
+        }
+
+        public static GameProgress Load()
+        {
+            if (!PlayerPrefs.HasKey(SaveKey))
+            {
+                return CreateDefault();
+            }
+
+            try
+            {
+                GameProgress progress = JsonUtility.FromJson<GameProgress>(PlayerPrefs.GetString(SaveKey));
+                return progress ?? CreateDefault();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Monstrology save could not be read: " + exception.Message);
+                return CreateDefault();
+            }
+        }
+
+        public static void Delete()
+        {
+            PlayerPrefs.DeleteKey(SaveKey);
+            PlayerPrefs.Save();
+        }
+
+        private static GameProgress CreateDefault()
+        {
+            GameProgress progress = new GameProgress();
+            progress.unlockedBiomes.Add(BiomeType.Forest.ToString());
+            return progress;
+        }
+    }
+}
