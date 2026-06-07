@@ -3,6 +3,9 @@
 Инструкция по новому 2D-миру, prefab-картам, компонентам игрока и связи с `BiomeData`:
 [`WORLD_EXPLORATION_SETUP.md`](WORLD_EXPLORATION_SETUP.md).
 
+Инструкция по личным питомцам, сохранению экземпляров и окну коллекции:
+[`PETS_SYSTEM_SETUP.md`](PETS_SYSTEM_SETUP.md).
+
 ## Быстрый запуск
 
 1. Откройте `Assets/Scenes/SampleScene.unity`.

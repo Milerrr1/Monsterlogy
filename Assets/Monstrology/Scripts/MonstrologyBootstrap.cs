@@ -63,6 +63,14 @@ namespace Monstrology
 
             quests.Initialize(game);
 
+            CreatureCollectionManager petCollection = GetComponent<CreatureCollectionManager>();
+            if (petCollection == null)
+            {
+                petCollection = gameObject.AddComponent<CreatureCollectionManager>();
+            }
+
+            petCollection.Initialize(game);
+
             PlayerController2D player = FindObjectOfType<PlayerController2D>();
             if (player == null)
             {
@@ -110,7 +118,7 @@ namespace Monstrology
                 ui = gameObject.AddComponent<UIManager>();
             }
 
-            ui.Initialize(game, exploration, mutations, quests, player, interaction);
+            ui.Initialize(game, exploration, mutations, quests, player, interaction, petCollection);
             bridge.LoadProgress();
         }
 

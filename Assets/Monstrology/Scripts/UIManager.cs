@@ -14,6 +14,7 @@ namespace Monstrology
         private QuestSystem quests;
         private PlayerController2D player;
         private InteractionSystem interaction;
+        private CreatureCollectionManager petCollection;
 
         private Image background;
         private Text biomeText;
@@ -29,9 +30,12 @@ namespace Monstrology
         private GameObject biomePanel;
         private GameObject mutationPanel;
         private GameObject questPanel;
+        private GameObject petsPanel;
 
         private EncyclopediaUI encyclopediaUI;
         private BiomeUI biomeUI;
+        private PetsPanel petsUI;
+        private PetAdoptionDialog adoptionDialog;
 
         private Dropdown creatureDropdown;
         private Dropdown itemDropdown;
@@ -44,7 +48,8 @@ namespace Monstrology
             MutationSystem mutationSystem,
             QuestSystem questSystem,
             PlayerController2D playerController,
-            InteractionSystem interactionSystem)
+            InteractionSystem interactionSystem,
+            CreatureCollectionManager collectionManager)
         {
             game = gameManager;
             exploration = explorationSystem;
@@ -52,6 +57,7 @@ namespace Monstrology
             quests = questSystem;
             player = playerController;
             interaction = interactionSystem;
+            petCollection = collectionManager;
 
             EnsureEventSystem();
             BuildCanvas();
@@ -186,7 +192,7 @@ namespace Monstrology
                 new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 58f));
 
             HorizontalLayoutGroup layout = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(160, 160, 7, 7);
+            layout.padding = new RectOffset(125, 125, 7, 7);
             layout.spacing = 10f;
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.childControlHeight = true;
@@ -196,6 +202,7 @@ namespace Monstrology
 
             AddNavigationButton(bar.transform, "БИОМЫ", OpenBiomes);
             AddNavigationButton(bar.transform, "ЭНЦИКЛОПЕДИЯ", OpenEncyclopedia);
+            AddNavigationButton(bar.transform, "ПИТОМЦЫ", OpenPets);
             AddNavigationButton(bar.transform, "МУТАЦИИ", OpenMutations);
             AddNavigationButton(bar.transform, "КВЕСТЫ", OpenQuests);
         }
@@ -256,6 +263,84 @@ namespace Monstrology
 
             questPanel = CreateModal(parent, "КВЕСТЫ И НАГРАДЫ");
             questContent = UIFactory.FindContent(questPanel);
+
+            petsPanel = CreateModal(parent, "МОИ ПИТОМЦЫ");
+            petsUI = gameObject.AddComponent<PetsPanel>();
+            petsUI.Initialize(game, petCollection, UIFactory.FindContent(petsPanel));
+
+            BuildAdoptionDialog(parent);
+        }
+
+        private void BuildAdoptionDialog(Transform parent)
+        {
+            GameObject root = UIFactory.Object("PetAdoptionDialog", parent);
+            UIFactory.Stretch(root.GetComponent<RectTransform>());
+
+            Image dim = UIFactory.Image("Dim", root.transform, new Color(0.015f, 0.02f, 0.035f, 0.9f));
+            UIFactory.Stretch(dim.rectTransform);
+
+            Image card = UIFactory.Image("Card", root.transform, new Color(0.09f, 0.12f, 0.19f));
+            UIFactory.ApplyRounded(card);
+            UIFactory.AddSoftShadow(card.gameObject);
+            UIFactory.SetRect(card.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(570f, 350f));
+
+            Text title = UIFactory.Text(
+                "Title",
+                card.transform,
+                "НОВАЯ ВСТРЕЧА",
+                26,
+                FontStyle.Bold,
+                TextAnchor.MiddleCenter);
+            UIFactory.SetRect(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(-30f, 44f));
+            title.color = new Color(1f, 0.82f, 0.34f);
+
+            Image portrait = UIFactory.Image("Portrait", card.transform, Color.white);
+            UIFactory.SetRect(portrait.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f), new Vector2(32f, 22f), new Vector2(150f, 150f));
+            portrait.preserveAspect = true;
+
+            Text species = UIFactory.Text(
+                "Species",
+                card.transform,
+                "",
+                18,
+                FontStyle.Normal,
+                TextAnchor.UpperCenter);
+            UIFactory.SetOffsets(species.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(210f, 126f), new Vector2(-30f, -76f));
+            species.color = new Color(0.88f, 0.91f, 0.96f);
+
+            InputField nameInput = UIFactory.InputField(
+                "PetName",
+                card.transform,
+                "",
+                "Имя питомца");
+            UIFactory.SetRect(nameInput.GetComponent<RectTransform>(),
+                new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
+                new Vector2(-30f, -16f), new Vector2(320f, 46f));
+
+            Button accept = UIFactory.Button(
+                "Accept",
+                card.transform,
+                "ДА, ДОБАВИТЬ",
+                new Color(0.28f, 0.65f, 0.43f));
+            UIFactory.SetRect(accept.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(1f, 0f),
+                new Vector2(-10f, 24f), new Vector2(220f, 52f));
+
+            Button decline = UIFactory.Button(
+                "Decline",
+                card.transform,
+                "НЕТ, ТОЛЬКО В ЭНЦИКЛОПЕДИЮ",
+                new Color(0.43f, 0.34f, 0.4f));
+            UIFactory.SetRect(decline.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f),
+                new Vector2(10f, 24f), new Vector2(260f, 52f));
+
+            adoptionDialog = gameObject.AddComponent<PetAdoptionDialog>();
+            adoptionDialog.Initialize(petCollection, root, portrait, species, nameInput, accept, decline);
         }
 
         private GameObject CreateModal(Transform parent, string title)
@@ -369,6 +454,12 @@ namespace Monstrology
             RebuildQuests();
         }
 
+        public void OpenPets()
+        {
+            OpenPanel(petsPanel);
+            petsUI.Rebuild();
+        }
+
         public void PerformMutation()
         {
             List<CreatureData> creatures = game.Content.creatures.FindAll(creature => game.IsCreatureFound(creature.id));
@@ -473,6 +564,18 @@ namespace Monstrology
             resultIcon.sprite = result.icon;
             resultIcon.color = result.icon == null ? result.accentColor : Color.white;
             notificationText.text = "";
+
+            if (result.firstSpeciesDiscovery && result.creature != null && adoptionDialog != null)
+            {
+                SetWorldInputEnabled(false);
+                adoptionDialog.Show(result.creature, accepted =>
+                {
+                    ShowNotification(accepted
+                        ? result.creature.creatureName + " теперь в коллекции питомцев."
+                        : result.creature.creatureName + " остался только в энциклопедии.");
+                    SetWorldInputEnabled(true);
+                });
+            }
         }
 
         private void ShowWelcome()
@@ -520,6 +623,7 @@ namespace Monstrology
             biomePanel.SetActive(false);
             mutationPanel.SetActive(false);
             questPanel.SetActive(false);
+            petsPanel.SetActive(false);
             SetWorldInputEnabled(true);
         }
 
@@ -678,6 +782,41 @@ namespace Monstrology
             dropdown.template = template.rectTransform;
             dropdown.itemText = itemLabel;
             return dropdown;
+        }
+
+        public static InputField InputField(
+            string name,
+            Transform parent,
+            string value,
+            string placeholderValue)
+        {
+            Image root = Image(name, parent, new Color(0.14f, 0.18f, 0.25f));
+            ApplyRounded(root);
+            InputField input = root.gameObject.AddComponent<InputField>();
+
+            Text text = Text("Text", root.transform, value, 16, FontStyle.Normal, TextAnchor.MiddleLeft);
+            SetOffsets(text.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(14f, 6f), new Vector2(-14f, -6f));
+            text.supportRichText = false;
+
+            Text placeholder = Text(
+                "Placeholder",
+                root.transform,
+                placeholderValue,
+                16,
+                FontStyle.Italic,
+                TextAnchor.MiddleLeft);
+            SetOffsets(placeholder.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(14f, 6f), new Vector2(-14f, -6f));
+            placeholder.color = new Color(0.62f, 0.66f, 0.74f, 0.8f);
+
+            input.textComponent = text;
+            input.placeholder = placeholder;
+            input.text = value ?? string.Empty;
+            input.lineType = UnityEngine.UI.InputField.LineType.SingleLine;
+            input.characterLimit = 24;
+            input.targetGraphic = root;
+            return input;
         }
 
         public static Transform ScrollContent(Transform parent, Vector2 minOffset, Vector2 maxOffset)

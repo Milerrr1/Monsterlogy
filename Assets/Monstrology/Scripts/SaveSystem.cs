@@ -20,7 +20,7 @@ namespace Monstrology
     [Serializable]
     public class GameProgress
     {
-        public int version = 1;
+        public int version = 2;
         public int coins = 120;
         public int energy = 20;
         public string currentBiome = BiomeType.Forest.ToString();
@@ -33,6 +33,7 @@ namespace Monstrology
         public List<StringIntEntry> tracks = new List<StringIntEntry>();
         public List<string> claimedQuests = new List<string>();
         public List<string> purchasedHints = new List<string>();
+        public List<CreatureInstance> pets = new List<CreatureInstance>();
     }
 
     public static class SaveSystem

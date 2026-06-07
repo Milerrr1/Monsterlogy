@@ -54,11 +54,14 @@ namespace Monstrology.Editor
                     WorldExplorationManager world = Object.FindObjectOfType<WorldExplorationManager>();
                     InteractionSystem interaction = Object.FindObjectOfType<InteractionSystem>();
                     CameraFollow2D cameraFollow = Object.FindObjectOfType<CameraFollow2D>();
+                    CreatureCollectionManager petCollection = Object.FindObjectOfType<CreatureCollectionManager>();
+                    PetsPanel petsPanel = Object.FindObjectOfType<PetsPanel>(true);
                     if (game == null || ui == null || canvas == null || player == null ||
-                        world == null || interaction == null || cameraFollow == null)
+                        world == null || interaction == null || cameraFollow == null ||
+                        petCollection == null || petsPanel == null)
                     {
                         throw new System.InvalidOperationException(
-                            "Bootstrap did not create the runtime managers, world, player, camera and Canvas.");
+                            "Bootstrap did not create the runtime managers, pets, world, player, camera and Canvas.");
                     }
 
                     if (game.Content.biomes.Count != 6 || game.Content.creatures.Count < 10)

@@ -32,6 +32,10 @@ namespace Monstrology
 
         public event Action StateChanged;
         public event Action<string> NotificationRaised;
+        public event Action ExplorationRegistered;
+        public event Action<CreatureData, bool> CreatureRegistered;
+        public event Action<BiomeData> BiomeUnlocked;
+        public event Action ProgressReset;
 
         public GameContent Content { get { return content; } }
         public int Coins { get { return progress.coins; } }
@@ -109,6 +113,10 @@ namespace Monstrology
         {
             progress.explorationCount++;
             Save();
+            if (ExplorationRegistered != null)
+            {
+                ExplorationRegistered();
+            }
         }
 
         public bool AddCreature(CreatureData creature)
@@ -124,6 +132,11 @@ namespace Monstrology
             int reward = GetDiscoveryReward(creature.rarity, firstDiscovery);
             progress.coins += reward;
             Save();
+            if (CreatureRegistered != null)
+            {
+                CreatureRegistered(creature, firstDiscovery);
+            }
+
             return firstDiscovery;
         }
 
@@ -240,6 +253,11 @@ namespace Monstrology
             progress.currentBiome = biome.type.ToString();
             RaiseNotification("Открыт биом: " + biome.biomeName);
             Save();
+            if (BiomeUnlocked != null)
+            {
+                BiomeUnlocked(biome);
+            }
+
             return true;
         }
 
@@ -280,6 +298,21 @@ namespace Monstrology
         public BiomeData GetBiome(BiomeType type)
         {
             return content.biomes.Find(biome => biome != null && biome.type == type);
+        }
+
+        public List<CreatureInstance> GetSavedPets()
+        {
+            return progress != null && progress.pets != null
+                ? new List<CreatureInstance>(progress.pets)
+                : new List<CreatureInstance>();
+        }
+
+        public void SavePets(IList<CreatureInstance> pets)
+        {
+            progress.pets = pets != null
+                ? new List<CreatureInstance>(pets)
+                : new List<CreatureInstance>();
+            Save();
         }
 
         public bool IsQuestClaimed(string questId)
@@ -352,11 +385,16 @@ namespace Monstrology
         {
             SaveSystem.Delete();
             progress = SaveSystem.Load();
+            EnsureProgressDefaults();
             creatureCounts.Clear();
             itemCounts.Clear();
             trackCounts.Clear();
             CurrentBiome = GetBiome(BiomeType.Forest);
             NotifyStateChanged();
+            if (ProgressReset != null)
+            {
+                ProgressReset();
+            }
         }
 
         public void RaiseNotification(string message)
@@ -428,6 +466,8 @@ namespace Monstrology
             progress.tracks = progress.tracks ?? new List<StringIntEntry>();
             progress.claimedQuests = progress.claimedQuests ?? new List<string>();
             progress.purchasedHints = progress.purchasedHints ?? new List<string>();
+            progress.pets = progress.pets ?? new List<CreatureInstance>();
+            progress.version = Mathf.Max(progress.version, 2);
         }
 
         private static void ReadEntries(IEnumerable<StringIntEntry> entries, IDictionary<string, int> target)

@@ -20,6 +20,8 @@ namespace Monstrology
         public string description;
         public Sprite icon;
         public Color accentColor;
+        public CreatureData creature;
+        public bool firstSpeciesDiscovery;
     }
 
     public class ExplorationSystem : MonoBehaviour
@@ -208,7 +210,7 @@ namespace Monstrology
             bool firstDiscovery = game.AddCreature(selected);
             string discoveryText = firstDiscovery
                 ? "Новая запись в энциклопедии!"
-                : "Этот вид уже знаком. Ещё один экземпляр пополнил коллекцию.";
+                : "Этот вид уже знаком. Новая встреча отмечена в журнале.";
 
             return new ExplorationResult
             {
@@ -217,7 +219,9 @@ namespace Monstrology
                 description = discoveryText + "\nРедкость: " + Localization.Rarity(selected.rarity) +
                               "\n" + game.GetPseudoOnlineText(selected),
                 icon = selected.icon,
-                accentColor = Localization.RarityColor(selected.rarity)
+                accentColor = Localization.RarityColor(selected.rarity),
+                creature = selected,
+                firstSpeciesDiscovery = firstDiscovery
             };
         }
 
