@@ -25,6 +25,12 @@ Monstrology
 ├── PetUpgradeSystem
 ├── BreedingSystem
 ├── WorldEnvironmentSystem
+├── EnergyRegenerationSystem
+├── StarterBoostSystem
+├── SignatureSetSystem
+├── CreatureNestSystem
+├── BiomeEventSystem
+├── FavoriteHelperSystem
 ├── AchievementSystem
 ├── QuestSystem
 ├── YandexGamesBridge
@@ -80,6 +86,9 @@ reference resolution `960 x 540`, match `0.5`.
    - `Create > Monstrology > Biome`
    - `Create > Monstrology > Item`
    - `Create > Monstrology > Quest`
+   - `Create > Monstrology > Signature Set`
+   - `Create > Monstrology > Creature Nest`
+   - `Create > Monstrology > Biome Event`
 4. Заполните списки `Authored Content` у bootstrap.
 5. В каждом `BiomeData` заполните `Available Creatures`.
 6. В `Species Evolutions` укажите базовый вид, число копий и следующую форму.
@@ -125,9 +134,10 @@ ID должны быть уникальными, стабильными и со�
 ## Сохранение
 
 `SaveSystem` хранит JSON в `PlayerPrefs` под прежним ключом `Monstrology.Progress.v1`.
-Формат версии 5 автоматически дополняет старые сохранения. Сохраняются монеты, энергия, биом,
+Формат версии 6 автоматически дополняет старые сохранения. Сохраняются монеты, энергия и её UTC-таймер, биом,
 исследования, открытые виды, копии, питомцы, уровни, предметы, гардероб, следы, время суток,
-погода, достижения, квесты и купленные подсказки.
+погода, логовища и их уровни, прогресс комплектов, активные бонусы комплектов, найденные события,
+стартовый буст, достижения, квесты и купленные подсказки.
 
 Для сброса во время разработки вызовите `GameManager.ResetProgress()` или удалите PlayerPrefs.
 
@@ -155,6 +165,10 @@ ID должны быть уникальными, стабильными и со�
 - `WorldExplorationManager.cs`, `InfiniteBiomeMap.cs`, `TileRepeater.cs`: мир, компас и пул фоновых тайлов.
 - `TrackChainSystem.cs`: последовательности следов, ведущие к редкому существу.
 - `WorldEnvironmentSystem.cs`: ускоренное время суток и автоматическая погода.
+- `EnergyRegenerationSystem.cs`, `StarterBoostSystem.cs`: онлайн/офлайн энергия и первые 15 минут прогрессии.
+- `SignatureSetSystem.cs`: прогресс, бонусы и завершение тематических комплектов одежды.
+- `CreatureNestSystem.cs`: постоянные логовища, таймеры наград и уровни логовищ.
+- `BiomeEventSystem.cs`, `FavoriteHelperSystem.cs`: временные события и пассивная помощь любимчика.
 - `AchievementSystem.cs`: проверка и сохранение достижений.
 - `SaveSystem.cs`: сериализация PlayerPrefs.
 - `EncyclopediaUI.cs`, `BiomeUI.cs`, `UIManager.cs`: интерфейс.

@@ -1,4 +1,5 @@
 using System.Linq;
+using System;
 using UnityEngine;
 
 namespace Monstrology
@@ -11,6 +12,7 @@ namespace Monstrology
         private CreatureCollectionManager collection;
 
         public string LastMessage { get; private set; }
+        public event Action<CreatureInstance> PetLeveled;
 
         public void Initialize(GameManager gameManager, CreatureCollectionManager collectionManager)
         {
@@ -109,6 +111,10 @@ namespace Monstrology
             pet.experience = 0;
             collection.SaveNow();
             LastMessage = "Уровень повышен до " + pet.level + ".";
+            if (PetLeveled != null)
+            {
+                PetLeveled(pet);
+            }
             Debug.Log("Pet upgraded: " + pet.uniqueId + " -> level " + pet.level);
             return true;
         }

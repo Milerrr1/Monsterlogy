@@ -12,11 +12,13 @@ namespace Monstrology
         private PlayerController2D player;
         private CreatureCollectionManager collection;
         private AccessoryInventoryManager accessories;
+        private SignatureSetSystem signatureSets;
         private GameObject petObject;
         private SpriteRenderer petRenderer;
         private TextMesh nameText;
         private TextMesh rarityText;
         private Transform accessoryRoot;
+        private GameObject fullSetEffect;
         private Vector3 velocity;
         private string displayedPetId;
 
@@ -28,6 +30,7 @@ namespace Monstrology
             player = playerController;
             collection = collectionManager;
             accessories = accessoryManager;
+            signatureSets = FindObjectOfType<SignatureSetSystem>();
 
             if (collection != null)
             {
@@ -39,6 +42,12 @@ namespace Monstrology
             {
                 accessories.InventoryChanged -= RefreshFavorite;
                 accessories.InventoryChanged += RefreshFavorite;
+            }
+
+            if (signatureSets != null)
+            {
+                signatureSets.SetStateChanged -= RefreshFavorite;
+                signatureSets.SetStateChanged += RefreshFavorite;
             }
 
             EnsureVisual();
@@ -55,6 +64,11 @@ namespace Monstrology
             if (accessories != null)
             {
                 accessories.InventoryChanged -= RefreshFavorite;
+            }
+
+            if (signatureSets != null)
+            {
+                signatureSets.SetStateChanged -= RefreshFavorite;
             }
         }
 
@@ -122,6 +136,15 @@ namespace Monstrology
             GameObject accessoryObject = new GameObject("Accessories");
             accessoryObject.transform.SetParent(petObject.transform, false);
             accessoryRoot = accessoryObject.transform;
+
+            fullSetEffect = new GameObject("SignatureSetEffect");
+            fullSetEffect.transform.SetParent(petObject.transform, false);
+            fullSetEffect.transform.localScale = Vector3.one * 1.8f;
+            SpriteRenderer effectRenderer = fullSetEffect.AddComponent<SpriteRenderer>();
+            effectRenderer.sprite = WorldPlaceholderSprites.Ring;
+            effectRenderer.color = new Color(0.55f, 0.86f, 1f, 0.55f);
+            effectRenderer.sortingOrder = 18;
+            fullSetEffect.SetActive(false);
             petObject.SetActive(false);
         }
 
@@ -147,6 +170,11 @@ namespace Monstrology
             rarityText.text = PetLocalization.Rarity(favorite.rarity);
             rarityText.color = PetLocalization.RarityColor(favorite.rarity);
             RebuildAccessoryVisuals(favorite);
+            if (fullSetEffect != null)
+            {
+                fullSetEffect.SetActive(
+                    signatureSets != null && signatureSets.HasFullSetVisual(favorite));
+            }
 
             if (changedPet && player != null)
             {

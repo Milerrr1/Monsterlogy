@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using UnityEngine;
 
@@ -26,6 +27,9 @@ namespace Monstrology
         public List<MutationRecipe> mutationRecipes = new List<MutationRecipe>();
         public List<BreedingRecipeData> breedingRecipes = new List<BreedingRecipeData>();
         public List<SpeciesEvolutionData> speciesEvolutions = new List<SpeciesEvolutionData>();
+        public List<SignatureSetData> signatureSets = new List<SignatureSetData>();
+        public List<BiomeEventData> biomeEvents = new List<BiomeEventData>();
+        public List<CreatureNestData> creatureNests = new List<CreatureNestData>();
     }
 
     public class GameManager : MonoBehaviour
@@ -44,6 +48,8 @@ namespace Monstrology
         public GameContent Content { get { return content; } }
         public int Coins { get { return progress.coins; } }
         public int Energy { get { return progress.energy; } }
+        public float StarterBoostPlaySeconds { get { return progress.starterBoostPlaySeconds; } }
+        public bool IsStarterBoostActive { get { return progress.starterBoostPlaySeconds < 15f * 60f; } }
         public int ExplorationCount { get { return progress.explorationCount; } }
         public int MutationCount { get { return progress.mutationCount; } }
         public int TotalCreaturesFound { get { return progress.totalCreaturesFound; } }
@@ -109,15 +115,55 @@ namespace Monstrology
                 return false;
             }
 
+            bool spentFromFullEnergy = progress.energy >= EnergyRegenerationSystem.MaxEnergy;
             progress.energy -= amount;
+            if (spentFromFullEnergy)
+            {
+                progress.lastEnergyUtc = DateTime.UtcNow.ToString(
+                    "o",
+                    CultureInfo.InvariantCulture);
+            }
+
             Save();
             return true;
         }
 
         public void AddEnergy(int amount)
         {
-            progress.energy = Mathf.Max(0, progress.energy + amount);
+            progress.energy = Mathf.Clamp(
+                progress.energy + amount,
+                0,
+                EnergyRegenerationSystem.MaxEnergy);
             Save();
+        }
+
+        public string GetEnergyClockUtc()
+        {
+            return progress.lastEnergyUtc;
+        }
+
+        public void ApplyEnergyRegeneration(int amount, DateTime clockUtc)
+        {
+            progress.energy = Mathf.Clamp(
+                progress.energy + Mathf.Max(0, amount),
+                0,
+                EnergyRegenerationSystem.MaxEnergy);
+            progress.lastEnergyUtc = clockUtc.ToUniversalTime().ToString(
+                "o",
+                CultureInfo.InvariantCulture);
+            Save();
+        }
+
+        public void SaveStarterBoost(float playedSeconds, int rewardIndex)
+        {
+            progress.starterBoostPlaySeconds = Mathf.Clamp(playedSeconds, 0f, 15f * 60f);
+            progress.starterBoostRewardIndex = Mathf.Max(0, rewardIndex);
+            Save();
+        }
+
+        public int GetStarterBoostRewardIndex()
+        {
+            return Mathf.Max(0, progress.starterBoostRewardIndex);
         }
 
         public void AddCoins(int amount)
@@ -349,6 +395,38 @@ namespace Monstrology
                 creature.element == element && IsCreatureFound(creature.id));
         }
 
+        public int GetBiomeCreatureTotal(BiomeType biome)
+        {
+            BiomeData data = GetBiome(biome);
+            return data == null || data.availableCreatures == null
+                ? 0
+                : data.availableCreatures
+                    .Where(creature => creature != null && creature.appearanceChance > 0.001f)
+                    .Select(creature => creature.id)
+                    .Distinct()
+                    .Count();
+        }
+
+        public int GetBiomeCreatureFound(BiomeType biome)
+        {
+            BiomeData data = GetBiome(biome);
+            return data == null || data.availableCreatures == null
+                ? 0
+                : data.availableCreatures
+                    .Where(creature => creature != null &&
+                                       creature.appearanceChance > 0.001f &&
+                                       IsCreatureFound(creature.id))
+                    .Select(creature => creature.id)
+                    .Distinct()
+                    .Count();
+        }
+
+        public bool IsBiomeEncyclopediaComplete(BiomeType biome)
+        {
+            int total = GetBiomeCreatureTotal(biome);
+            return total > 0 && GetBiomeCreatureFound(biome) >= total;
+        }
+
         public CreatureData GetCreature(string id)
         {
             return content.creatures.Find(creature => creature != null && creature.id == id);
@@ -403,6 +481,79 @@ namespace Monstrology
                 ? new List<string>(accessoryIds)
                 : new List<string>();
             Save();
+        }
+
+        public List<CreatureNestProgress> GetSavedCreatureNests()
+        {
+            return progress.creatureNests != null
+                ? progress.creatureNests
+                    .Where(entry => entry != null)
+                    .Select(entry => entry.Clone())
+                    .ToList()
+                : new List<CreatureNestProgress>();
+        }
+
+        public void SaveCreatureNests(IList<CreatureNestProgress> nests)
+        {
+            progress.creatureNests = nests != null
+                ? nests.Select(entry => entry != null ? entry.Clone() : null)
+                    .Where(entry => entry != null)
+                    .ToList()
+                : new List<CreatureNestProgress>();
+            Save();
+        }
+
+        public bool CompleteSignatureSet(string setId)
+        {
+            if (string.IsNullOrEmpty(setId) || progress.completedSignatureSets.Contains(setId))
+            {
+                return false;
+            }
+
+            progress.completedSignatureSets.Add(setId);
+            Save();
+            return true;
+        }
+
+        public bool IsSignatureSetCompleted(string setId)
+        {
+            return !string.IsNullOrEmpty(setId) &&
+                   progress.completedSignatureSets.Contains(setId);
+        }
+
+        public IReadOnlyList<string> GetCompletedSignatureSets()
+        {
+            return progress.completedSignatureSets.AsReadOnly();
+        }
+
+        public void SaveActiveSignatureBonuses(IList<string> bonusIds)
+        {
+            progress.activeSignatureBonuses = bonusIds != null
+                ? bonusIds.Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList()
+                : new List<string>();
+            Save();
+        }
+
+        public IReadOnlyList<string> GetActiveSignatureBonuses()
+        {
+            return progress.activeSignatureBonuses.AsReadOnly();
+        }
+
+        public bool RegisterBiomeEvent(string eventId)
+        {
+            if (string.IsNullOrEmpty(eventId) || progress.foundBiomeEvents.Contains(eventId))
+            {
+                return false;
+            }
+
+            progress.foundBiomeEvents.Add(eventId);
+            Save();
+            return true;
+        }
+
+        public IReadOnlyList<string> GetFoundBiomeEvents()
+        {
+            return progress.foundBiomeEvents.AsReadOnly();
         }
 
         public IReadOnlyList<string> GetUnlockedAchievements()
@@ -478,10 +629,16 @@ namespace Monstrology
             }
 
             progress.claimedQuests.Add(quest.id);
-            progress.coins += quest.rewardCoins;
-            progress.energy += quest.rewardEnergy;
-            RaiseNotification("Награда получена: +" + quest.rewardCoins + " монет, +" +
-                              quest.rewardEnergy + " энергии");
+            int coinReward = IsStarterBoostActive ? quest.rewardCoins * 2 : quest.rewardCoins;
+            int energyReward = quest.rewardEnergy + (IsStarterBoostActive ? 2 : 0);
+            progress.coins += coinReward;
+            progress.energy = Mathf.Clamp(
+                progress.energy + energyReward,
+                0,
+                EnergyRegenerationSystem.MaxEnergy);
+            RaiseNotification("Награда получена: +" + coinReward + " монет, +" +
+                              energyReward + " энергии" +
+                              (IsStarterBoostActive ? " • Буст новичка" : ""));
             Save();
         }
 
@@ -597,6 +754,26 @@ namespace Monstrology
             progress.pets = progress.pets ?? new List<CreatureInstance>();
             progress.accessories = progress.accessories ?? new List<string>();
             progress.unlockedAchievements = progress.unlockedAchievements ?? new List<string>();
+            progress.creatureNests = progress.creatureNests ?? new List<CreatureNestProgress>();
+            progress.completedSignatureSets =
+                progress.completedSignatureSets ?? new List<string>();
+            progress.activeSignatureBonuses =
+                progress.activeSignatureBonuses ?? new List<string>();
+            progress.foundBiomeEvents = progress.foundBiomeEvents ?? new List<string>();
+            string now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+            progress.lastEnergyUtc = string.IsNullOrEmpty(progress.lastEnergyUtc)
+                ? now
+                : progress.lastEnergyUtc;
+            progress.accountCreatedUtc = string.IsNullOrEmpty(progress.accountCreatedUtc)
+                ? now
+                : progress.accountCreatedUtc;
+            progress.starterBoostPlaySeconds =
+                Mathf.Clamp(progress.starterBoostPlaySeconds, 0f, 15f * 60f);
+            progress.starterBoostRewardIndex = Mathf.Max(0, progress.starterBoostRewardIndex);
+            progress.energy = Mathf.Clamp(
+                progress.energy,
+                0,
+                EnergyRegenerationSystem.MaxEnergy);
             progress.timeOfDay = string.IsNullOrEmpty(progress.timeOfDay)
                 ? TimeOfDay.Day.ToString()
                 : progress.timeOfDay;
@@ -605,7 +782,7 @@ namespace Monstrology
                 : progress.weather;
             progress.worldTime01 = Mathf.Repeat(progress.worldTime01, 1f);
             progress.weatherTimer = Mathf.Max(0f, progress.weatherTimer);
-            progress.version = Mathf.Max(progress.version, 5);
+            progress.version = Mathf.Max(progress.version, 6);
         }
 
         private void EnsureContentDefaults()
@@ -618,6 +795,9 @@ namespace Monstrology
             content.mutationRecipes = content.mutationRecipes ?? new List<MutationRecipe>();
             content.breedingRecipes = content.breedingRecipes ?? new List<BreedingRecipeData>();
             content.speciesEvolutions = content.speciesEvolutions ?? new List<SpeciesEvolutionData>();
+            content.signatureSets = content.signatureSets ?? new List<SignatureSetData>();
+            content.biomeEvents = content.biomeEvents ?? new List<BiomeEventData>();
+            content.creatureNests = content.creatureNests ?? new List<CreatureNestData>();
         }
 
         private static void ReadEntries(IEnumerable<StringIntEntry> entries, IDictionary<string, int> target)

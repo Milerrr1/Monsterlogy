@@ -20,6 +20,9 @@ namespace Monstrology
         private PetUpgradeSystem upgrades;
         private WorldExplorationManager world;
         private AchievementSystem achievements;
+        private EnergyRegenerationSystem energyRegeneration;
+        private StarterBoostSystem starterBoost;
+        private BiomeEventSystem biomeEvents;
 
         private Image background;
         private Text biomeText;
@@ -51,6 +54,7 @@ namespace Monstrology
         private PetAdoptionDialog adoptionDialog;
 
         private Transform questContent;
+        private float headerTimer;
 
         public bool ResultCardVisible
         {
@@ -138,6 +142,9 @@ namespace Monstrology
             upgrades = upgradeSystem;
             world = FindObjectOfType<WorldExplorationManager>();
             achievements = FindObjectOfType<AchievementSystem>();
+            energyRegeneration = FindObjectOfType<EnergyRegenerationSystem>();
+            starterBoost = FindObjectOfType<StarterBoostSystem>();
+            biomeEvents = FindObjectOfType<BiomeEventSystem>();
             if (achievements == null)
             {
                 achievements = gameObject.AddComponent<AchievementSystem>();
@@ -151,6 +158,16 @@ namespace Monstrology
             game.NotificationRaised += ShowNotification;
             RefreshHeader();
             ShowWelcome();
+        }
+
+        private void Update()
+        {
+            headerTimer -= Time.unscaledDeltaTime;
+            if (headerTimer <= 0f)
+            {
+                RefreshEnergyText();
+                headerTimer = 0.25f;
+            }
         }
 
         private void OnDestroy()
@@ -210,6 +227,9 @@ namespace Monstrology
 
             coinsText = CreateResourcePill(bar.transform, "Coins", new Vector2(-242f, 0f), new Color(0.96f, 0.69f, 0.18f));
             energyText = CreateResourcePill(bar.transform, "Energy", new Vector2(-102f, 0f), new Color(0.32f, 0.76f, 0.98f));
+            energyText.fontSize = 13;
+            energyText.lineSpacing = 0.85f;
+            energyText.transform.parent.GetComponent<RectTransform>().sizeDelta = new Vector2(126f, 52f);
 
             Button energyButton = UIFactory.Button("RewardEnergy", bar.transform, "+ Энергия", new Color(0.24f, 0.48f, 0.78f));
             UIFactory.SetRect(energyButton.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
@@ -603,14 +623,35 @@ namespace Monstrology
 
             biomeText.text = game.CurrentBiome.biomeName + "  |  " +
                              WorldEnvironmentSystem.Localize(game.CurrentTimeOfDay) + "  |  " +
-                             WorldEnvironmentSystem.Localize(game.CurrentWeather);
+                             WorldEnvironmentSystem.Localize(game.CurrentWeather) +
+                             (biomeEvents != null && biomeEvents.ActiveEvent != null
+                                 ? "  |  " + biomeEvents.ActiveEvent.displayName
+                                 : "");
             coinsText.text = "МОНЕТЫ  " + game.Coins;
-            energyText.text = "ЭНЕРГИЯ  " + game.Energy;
+            RefreshEnergyText();
             tracksText.text = game.GetTrackSummary();
             Color tint = game.CurrentBiome.fallbackColor;
             tint.a = 0.06f;
             background.color = tint;
             background.sprite = null;
+        }
+
+        private void RefreshEnergyText()
+        {
+            if (energyText == null || game == null)
+            {
+                return;
+            }
+
+            string timer = game.Energy >= EnergyRegenerationSystem.MaxEnergy
+                ? "МАКСИМУМ"
+                : "следующая через " + EnergyRegenerationSystem.FormatTimer(
+                    energyRegeneration != null
+                        ? energyRegeneration.SecondsUntilNextEnergy
+                        : EnergyRegenerationSystem.RegenerationSeconds);
+            energyText.text = "ЭНЕРГИЯ " + game.Energy + "/" +
+                              EnergyRegenerationSystem.MaxEnergy + "\n" + timer +
+                              (starterBoost != null && starterBoost.IsActive ? " • БУСТ" : "");
         }
 
         private void ShowExplorationResult(ExplorationResult result)

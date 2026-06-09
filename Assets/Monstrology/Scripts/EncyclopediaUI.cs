@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,11 +8,13 @@ namespace Monstrology
     {
         private GameManager game;
         private Transform content;
+        private CreatureNestSystem nests;
 
         public void Initialize(GameManager gameManager, Transform contentRoot)
         {
             game = gameManager;
             content = contentRoot;
+            nests = FindObjectOfType<CreatureNestSystem>();
         }
 
         public void Rebuild()
@@ -70,7 +73,8 @@ namespace Monstrology
             {
                 details = Localization.Rarity(creature.rarity) + " • " + Localization.Biome(creature.biome) +
                           "\n" + creature.description +
-                          "\n\n" + game.GetPseudoOnlineText(creature);
+                          "\n\n" + game.GetPseudoOnlineText(creature) +
+                          BuildNestStatus(creature);
             }
             else
             {
@@ -106,6 +110,23 @@ namespace Monstrology
                     }
                 });
             }
+        }
+
+        private string BuildNestStatus(CreatureData creature)
+        {
+            CreatureNestProgress nest = nests != null
+                ? nests.GetNestForSpecies(creature.id)
+                : null;
+            if (nest == null)
+            {
+                return string.Empty;
+            }
+
+            TimeSpan remaining = nests.GetTimeUntilReady(nest);
+            return "\nЛоговище: уровень " + nest.level +
+                   (remaining <= TimeSpan.Zero
+                       ? " • награда готова"
+                       : " • " + Mathf.CeilToInt((float)remaining.TotalMinutes) + " мин.");
         }
 
         private static string BuildAppearanceHint(CreatureData creature)

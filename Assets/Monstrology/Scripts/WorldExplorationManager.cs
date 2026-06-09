@@ -25,6 +25,8 @@ namespace Monstrology
         private InfiniteBiomeMap infiniteMap;
         private WorldNavigationGuide navigationGuide;
         private TrackChainSystem trackChains;
+        private CreatureNestSystem creatureNests;
+        private BiomeEventSystem biomeEvents;
         private float respawnTimer;
         private float maintenanceTimer;
         private bool switchingMap;
@@ -65,6 +67,13 @@ namespace Monstrology
             }
 
             trackChains.Initialize(this);
+            creatureNests = FindObjectOfType<CreatureNestSystem>();
+            biomeEvents = FindObjectOfType<BiomeEventSystem>();
+            if (biomeEvents != null)
+            {
+                biomeEvents.EventStarted -= SpawnSpecialEvent;
+                biomeEvents.EventStarted += SpawnSpecialEvent;
+            }
 
             if (worldRoot == null)
             {
@@ -86,6 +95,11 @@ namespace Monstrology
             if (game != null)
             {
                 game.StateChanged -= HandleGameStateChanged;
+            }
+
+            if (biomeEvents != null)
+            {
+                biomeEvents.EventStarted -= SpawnSpecialEvent;
             }
         }
 
@@ -534,16 +548,37 @@ namespace Monstrology
                 }
             }
 
-            CreatureData selected = exploration.SelectCreature(rare.Count > 0 ? rare : source);
+            List<CreatureData> nestCandidates = rare.FindAll(creature =>
+                game.Content.creatureNests.Exists(nest =>
+                    nest != null && nest.speciesId == creature.id));
+            CreatureData selected = exploration.SelectCreature(
+                nestCandidates.Count > 0 ? nestCandidates : rare.Count > 0 ? rare : source);
             if (selected == null)
             {
                 game.RaiseNotification("След оборвался: условия появления существа изменились.");
                 return;
             }
 
+            CreatureNestData nestData = game.Content.creatureNests.Find(nest =>
+                nest != null && nest.speciesId == selected.id);
+            if (nestData == null)
+            {
+                CreatePickup(
+                    position,
+                    WorldPickupType.Creature,
+                    selected,
+                    null,
+                    exploration.SelectTrack(),
+                    null,
+                    null,
+                    -1);
+                game.RaiseNotification("Следы привели к " + selected.creatureName + ".");
+                return;
+            }
+
             CreatePickup(
                 position,
-                WorldPickupType.Creature,
+                WorldPickupType.CreatureNest,
                 selected,
                 null,
                 exploration.SelectTrack(),
@@ -551,7 +586,150 @@ namespace Monstrology
                 null,
                 -1);
 
-            game.RaiseNotification("Впереди редкое существо.");
+            game.RaiseNotification("Следы привели к логовищу " + selected.creatureName + ".");
+        }
+
+        public void ResolveCreatureNest(WorldPickup pickup)
+        {
+            if (pickup == null || pickup.Creature == null || creatureNests == null)
+            {
+                return;
+            }
+
+            CreatureNestProgress progress;
+            bool discovered = creatureNests.Discover(pickup.Creature.id, out progress);
+            if (progress == null)
+            {
+                exploration.ResolveWorldDiscovery(
+                    ExplorationResultType.Creature,
+                    pickup.Creature);
+                return;
+            }
+
+            string rewardMessage;
+            creatureNests.Claim(progress.nestId, out rewardMessage);
+            game.AddTrack(TrackType.Lair);
+            exploration.PublishExternalResult(new ExplorationResult
+            {
+                type = ExplorationResultType.CreatureNest,
+                title = discovered
+                    ? "Новое логовище: " + pickup.Creature.creatureName
+                    : "Знакомое логовище",
+                description = (discovered
+                                  ? "Логовище навсегда добавлено в коллекцию."
+                                  : "Вы снова нашли это логовище.") +
+                              "\n" + rewardMessage,
+                icon = pickup.Creature.icon,
+                accentColor = new Color(0.82f, 0.58f, 0.3f),
+                creature = pickup.Creature
+            });
+
+            Vector2 offset = UnityEngine.Random.insideUnitCircle.normalized * 2.2f;
+            CreatePickup(
+                pickup.transform.position + (Vector3)offset,
+                WorldPickupType.Creature,
+                pickup.Creature,
+                null,
+                exploration.SelectTrack(),
+                null,
+                null,
+                -1);
+        }
+
+        public void ResolveSpecialMapEvent(WorldPickup pickup)
+        {
+            if (pickup == null || pickup.BiomeEvent == null)
+            {
+                return;
+            }
+
+            ItemData reward = exploration.SelectItem(false);
+            if (reward != null)
+            {
+                game.AddItem(reward.id, 2);
+            }
+
+            CreatureData rare = SelectRareCreature();
+            if (rare != null)
+            {
+                game.AddCreatureCopies(rare.id, 1);
+            }
+
+            exploration.PublishExternalResult(new ExplorationResult
+            {
+                type = ExplorationResultType.SpecialEvent,
+                title = pickup.BiomeEvent.specialObjectName,
+                description = "Редкая находка события «" + pickup.BiomeEvent.displayName + "»." +
+                              (reward != null ? "\nПолучено: 2 × " + reward.itemName : "") +
+                              (rare != null ? "\nКопия вида: " + rare.creatureName : ""),
+                icon = reward != null ? reward.icon : null,
+                accentColor = new Color(0.95f, 0.42f, 0.82f)
+            });
+        }
+
+        public void SpawnFavoriteHint(bool preferNest)
+        {
+            if (player == null || currentMap == null)
+            {
+                return;
+            }
+
+            Vector2 direction = UnityEngine.Random.insideUnitCircle.normalized;
+            Vector3 position = player.transform.position + (Vector3)(direction * 5f);
+            if (preferNest && creatureNests != null)
+            {
+                CreatureNestData nest = game.Content.creatureNests.Find(data =>
+                    data != null && loadedBiome != null && data.biome == loadedBiome.type &&
+                    creatureNests.GetNest(data.id) == null);
+                CreatureData creature = nest != null ? game.GetCreature(nest.speciesId) : null;
+                if (creature != null)
+                {
+                    CreatePickup(position, WorldPickupType.CreatureNest, creature, null,
+                        TrackType.Lair, null, null, -1);
+                    game.RaiseNotification("Любимчик указывает на возможное логовище.");
+                    return;
+                }
+            }
+
+            CreatePickup(position, WorldPickupType.Trace, null, null,
+                TrackType.Paws, null, null, 0);
+            game.RaiseNotification("Любимчик заметил след неподалёку.");
+        }
+
+        private void SpawnSpecialEvent(BiomeEventData eventData)
+        {
+            if (eventData == null || player == null || currentMap == null ||
+                loadedBiome == null || eventData.biome != loadedBiome.type)
+            {
+                return;
+            }
+
+            Vector2 direction = UnityEngine.Random.insideUnitCircle.normalized;
+            Vector3 position = player.transform.position + (Vector3)(direction * 6.5f);
+            CreatePickup(
+                position,
+                WorldPickupType.SpecialEvent,
+                null,
+                null,
+                TrackType.ShinyStone,
+                null,
+                null,
+                -1,
+                eventData,
+                eventData.durationSeconds);
+        }
+
+        private CreatureData SelectRareCreature()
+        {
+            if (loadedBiome == null)
+            {
+                return null;
+            }
+
+            List<CreatureData> rare = loadedBiome.availableCreatures.FindAll(creature =>
+                creature != null && creature.rarity != CreatureRarity.Common &&
+                game.AreAppearanceConditionsMet(creature));
+            return rare.Count > 0 ? rare[UnityEngine.Random.Range(0, rare.Count)] : null;
         }
 
         private void MaintainPremiumCompass()
@@ -577,7 +755,9 @@ namespace Monstrology
             TrackType track,
             AccessoryData accessory,
             SpawnPoint spawnPoint,
-            int chainStage)
+            int chainStage,
+            BiomeEventData eventData = null,
+            float lifetimeSeconds = 0f)
         {
             if (currentMap == null)
             {
@@ -600,7 +780,9 @@ namespace Monstrology
                 this,
                 spawnPoint,
                 accessory,
-                chainStage);
+                chainStage,
+                eventData,
+                lifetimeSeconds);
             activePickups.Add(pickup);
             return pickup;
         }

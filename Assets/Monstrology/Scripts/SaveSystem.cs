@@ -20,7 +20,7 @@ namespace Monstrology
     [Serializable]
     public class GameProgress
     {
-        public int version = 5;
+        public int version = 6;
         public int coins = 120;
         public int energy = 20;
         public string currentBiome = BiomeType.Forest.ToString();
@@ -41,6 +41,14 @@ namespace Monstrology
         [Range(0f, 1f)] public float worldTime01 = 0.3f;
         public float weatherTimer;
         public List<string> unlockedAchievements = new List<string>();
+        public string lastEnergyUtc;
+        public string accountCreatedUtc;
+        public float starterBoostPlaySeconds;
+        public int starterBoostRewardIndex;
+        public List<CreatureNestProgress> creatureNests = new List<CreatureNestProgress>();
+        public List<string> completedSignatureSets = new List<string>();
+        public List<string> activeSignatureBonuses = new List<string>();
+        public List<string> foundBiomeEvents = new List<string>();
     }
 
     public static class SaveSystem

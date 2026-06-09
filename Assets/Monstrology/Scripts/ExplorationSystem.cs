@@ -11,7 +11,9 @@ namespace Monstrology
         Item,
         Egg,
         Nothing,
-        Accessory
+        Accessory,
+        CreatureNest,
+        SpecialEvent
     }
 
     public class ExplorationResult
@@ -92,6 +94,21 @@ namespace Monstrology
             return result;
         }
 
+        public void PublishExternalResult(ExplorationResult result, bool registerExploration = true)
+        {
+            if (result == null)
+            {
+                return;
+            }
+
+            if (registerExploration && game != null)
+            {
+                game.RegisterExploration();
+            }
+
+            RaiseCompleted(result);
+        }
+
         public CreatureData SelectCreature(IList<CreatureData> source)
         {
             if (game == null || source == null)
@@ -116,6 +133,15 @@ namespace Monstrology
 
             float totalWeight = 0f;
             bool trackBonus = game.GetLargestTrackCount() >= 3;
+            SignatureSetSystem signatureSets = FindObjectOfType<SignatureSetSystem>();
+            FavoriteHelperSystem favoriteHelper = FindObjectOfType<FavoriteHelperSystem>();
+            BiomeEventSystem biomeEvents = FindObjectOfType<BiomeEventSystem>();
+            float rareBonus = (signatureSets != null && game.CurrentBiome != null
+                                  ? signatureSets.GetRareCreatureBonus(game.CurrentBiome.type)
+                                  : 0f) +
+                              (favoriteHelper != null
+                                  ? favoriteHelper.RareCreatureChanceBonus
+                                  : 0f);
             List<float> weights = new List<float>();
             foreach (CreatureData creature in candidates)
             {
@@ -123,6 +149,15 @@ namespace Monstrology
                 if (trackBonus && creature.rarity != CreatureRarity.Common)
                 {
                     weight *= 1.75f;
+                }
+
+                if (creature.rarity != CreatureRarity.Common)
+                {
+                    weight *= 1f + rareBonus;
+                    if (biomeEvents != null && biomeEvents.IsActiveFor(creature.biome))
+                    {
+                        weight *= biomeEvents.RareCreatureMultiplier;
+                    }
                 }
 
                 weights.Add(weight);
@@ -158,7 +193,25 @@ namespace Monstrology
             }
 
             List<ItemData> preferred = candidates.FindAll(item => item.preferredBiome == game.CurrentBiome.type);
-            List<ItemData> pool = preferred.Count > 0 && UnityEngine.Random.value < 0.7f ? preferred : candidates;
+            SignatureSetSystem signatureSets = FindObjectOfType<SignatureSetSystem>();
+            FavoriteHelperSystem favoriteHelper = FindObjectOfType<FavoriteHelperSystem>();
+            BiomeEventSystem biomeEvents = FindObjectOfType<BiomeEventSystem>();
+            float preferredChance = 0.7f +
+                                    (signatureSets != null
+                                        ? signatureSets.GetResourceFindBonus(game.CurrentBiome.type)
+                                        : 0f) +
+                                    (favoriteHelper != null
+                                        ? favoriteHelper.ResourceChanceBonus
+                                        : 0f);
+            if (biomeEvents != null && biomeEvents.IsActiveFor(game.CurrentBiome.type))
+            {
+                preferredChance += 0.1f * (biomeEvents.ResourceMultiplier - 1f);
+            }
+
+            List<ItemData> pool = preferred.Count > 0 &&
+                                  UnityEngine.Random.value < Mathf.Clamp(preferredChance, 0.1f, 0.97f)
+                ? preferred
+                : candidates;
             return pool[UnityEngine.Random.Range(0, pool.Count)];
         }
 
@@ -186,6 +239,10 @@ namespace Monstrology
 
                 float rarityFactor = 1f / (1f + (int)accessory.rarity * 0.65f);
                 float weight = Mathf.Max(0.001f, accessory.dropChance) * rarityFactor;
+                if (game.CurrentBiome != null && accessory.signatureBiome == game.CurrentBiome.type)
+                {
+                    weight *= 1.4f;
+                }
                 candidates.Add(accessory);
                 weights.Add(weight);
                 totalWeight += weight;

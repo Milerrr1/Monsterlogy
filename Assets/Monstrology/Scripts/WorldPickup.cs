@@ -10,7 +10,9 @@ namespace Monstrology
         Item,
         Egg,
         Nothing,
-        Accessory
+        Accessory,
+        CreatureNest,
+        SpecialEvent
     }
 
     [RequireComponent(typeof(Collider2D))]
@@ -23,6 +25,7 @@ namespace Monstrology
         [SerializeField] private ItemData item;
         [SerializeField] private TrackType trackType;
         [SerializeField] private AccessoryData accessory;
+        [SerializeField] private BiomeEventData biomeEvent;
         [SerializeField] private SpriteRenderer visual;
 
         private ExplorationSystem exploration;
@@ -31,6 +34,7 @@ namespace Monstrology
         private bool collected;
         private Vector3 baseScale;
         private int trackChainStage = -1;
+        private float expiresAt;
 
         public static IEnumerable<WorldPickup> ActivePickups { get { return Active; } }
         public WorldPickupType PickupType { get { return pickupType; } }
@@ -40,6 +44,7 @@ namespace Monstrology
         public bool CanInteract { get { return isActiveAndEnabled && !collected; } }
         public TrackType TrackType { get { return trackType; } }
         public int TrackChainStage { get { return trackChainStage; } }
+        public BiomeEventData BiomeEvent { get { return biomeEvent; } }
 
         public string DisplayName
         {
@@ -57,6 +62,12 @@ namespace Monstrology
                         return item != null ? item.itemName : "осмотреть яйцо";
                     case WorldPickupType.Accessory:
                         return accessory != null ? accessory.displayName : "подобрать одежду";
+                    case WorldPickupType.CreatureNest:
+                        return creature != null ? "исследовать логово " + creature.creatureName : "исследовать логово";
+                    case WorldPickupType.SpecialEvent:
+                        return biomeEvent != null
+                            ? "исследовать " + biomeEvent.specialObjectName
+                            : "исследовать редкий объект";
                     default:
                         return "проверить место";
                 }
@@ -88,6 +99,18 @@ namespace Monstrology
 
         private void Update()
         {
+            if (expiresAt > 0f && Time.time >= expiresAt)
+            {
+                if (owner != null)
+                {
+                    owner.NotifyPickupCollected(this);
+                }
+
+                gameObject.SetActive(false);
+                Destroy(gameObject);
+                return;
+            }
+
             float pulse = 1f + Mathf.Sin(Time.time * 2.4f + transform.position.x) * 0.045f;
             transform.localScale = baseScale * pulse;
         }
@@ -110,17 +133,21 @@ namespace Monstrology
             WorldExplorationManager manager,
             SpawnPoint point,
             AccessoryData accessoryData = null,
-            int chainStage = -1)
+            int chainStage = -1,
+            BiomeEventData eventData = null,
+            float lifetimeSeconds = 0f)
         {
             pickupType = type;
             creature = creatureData;
             item = itemData;
             trackType = traceType;
             accessory = accessoryData;
+            biomeEvent = eventData;
             exploration = explorationSystem;
             owner = manager;
             spawnPoint = point;
             trackChainStage = chainStage;
+            expiresAt = lifetimeSeconds > 0f ? Time.time + lifetimeSeconds : 0f;
 
             if (spawnPoint != null)
             {
@@ -138,13 +165,24 @@ namespace Monstrology
             }
 
             collected = true;
-            if (pickupType == WorldPickupType.Trace && owner != null)
+            if (pickupType == WorldPickupType.CreatureNest && owner != null)
             {
-                owner.AdvanceTrackChain(this);
+                owner.ResolveCreatureNest(this);
             }
+            else if (pickupType == WorldPickupType.SpecialEvent && owner != null)
+            {
+                owner.ResolveSpecialMapEvent(this);
+            }
+            else
+            {
+                if (pickupType == WorldPickupType.Trace && owner != null)
+                {
+                    owner.AdvanceTrackChain(this);
+                }
 
-            ExplorationResultType resultType = ConvertType(pickupType);
-            exploration.ResolveWorldDiscovery(resultType, creature, item, trackType, accessory);
+                ExplorationResultType resultType = ConvertType(pickupType);
+                exploration.ResolveWorldDiscovery(resultType, creature, item, trackType, accessory);
+            }
 
             if (owner != null)
             {
@@ -185,6 +223,11 @@ namespace Monstrology
                 return accessory.icon;
             }
 
+            if (pickupType == WorldPickupType.CreatureNest && creature != null && creature.icon != null)
+            {
+                return creature.icon;
+            }
+
             switch (pickupType)
             {
                 case WorldPickupType.Creature:
@@ -195,6 +238,10 @@ namespace Monstrology
                     return WorldPlaceholderSprites.Egg;
                 case WorldPickupType.Accessory:
                     return WorldPlaceholderSprites.Square;
+                case WorldPickupType.CreatureNest:
+                    return WorldPlaceholderSprites.Ring;
+                case WorldPickupType.SpecialEvent:
+                    return WorldPlaceholderSprites.Diamond;
                 case WorldPickupType.Nothing:
                     return WorldPlaceholderSprites.Ring;
                 default:
@@ -226,6 +273,10 @@ namespace Monstrology
                         : accessory != null
                             ? PetLocalization.RarityColor(accessory.rarity)
                             : new Color(0.96f, 0.72f, 0.3f);
+                case WorldPickupType.CreatureNest:
+                    return new Color(0.75f, 0.52f, 0.28f);
+                case WorldPickupType.SpecialEvent:
+                    return new Color(0.95f, 0.42f, 0.82f);
                 default:
                     return new Color(0.72f, 0.76f, 0.84f);
             }

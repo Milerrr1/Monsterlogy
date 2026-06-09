@@ -9,6 +9,7 @@ namespace Monstrology
         private GameManager game;
         private CreatureCollectionManager collection;
         private AccessoryInventoryManager inventory;
+        private SignatureSetSystem signatureSets;
         private Transform content;
         private string selectedPetId;
 
@@ -22,6 +23,7 @@ namespace Monstrology
             collection = collectionManager;
             inventory = inventoryManager;
             content = contentRoot;
+            signatureSets = FindObjectOfType<SignatureSetSystem>();
         }
 
         public void Rebuild()
@@ -38,6 +40,8 @@ namespace Monstrology
             layout.childControlHeight = false;
             layout.childControlWidth = true;
             layout.childForceExpandWidth = true;
+
+            BuildSignatureSetProgress();
 
             IReadOnlyList<CreatureInstance> pets = collection.GetAllPets();
             if (pets.Count == 0)
@@ -100,6 +104,45 @@ namespace Monstrology
                 {
                     BuildWardrobeRow(selected, accessory);
                 }
+            }
+        }
+
+        private void BuildSignatureSetProgress()
+        {
+            if (signatureSets == null || game == null || game.Content.signatureSets.Count == 0)
+            {
+                return;
+            }
+
+            Text heading = UIFactory.Label(content, "СИГНАТУРНЫЕ КОМПЛЕКТЫ", 19, 34f);
+            heading.fontStyle = FontStyle.Bold;
+            heading.color = new Color(1f, 0.82f, 0.34f);
+            foreach (SignatureSetData set in game.Content.signatureSets)
+            {
+                if (set == null)
+                {
+                    continue;
+                }
+
+                int owned = signatureSets.GetOwnedPieceCount(set);
+                List<string> pieces = new List<string>();
+                foreach (string accessoryId in set.accessoryIds)
+                {
+                    AccessoryData accessory = game.GetAccessory(accessoryId);
+                    pieces.Add(
+                        (inventory.HasAccessory(accessoryId) ? "найдено: " : "???: ") +
+                        (accessory != null ? accessory.displayName : accessoryId));
+                }
+
+                Text row = UIFactory.Label(
+                    content,
+                    set.displayName + "  •  " + owned + "/" + set.accessoryIds.Count +
+                    "\n" + string.Join("  |  ", pieces),
+                    14,
+                    62f);
+                row.color = owned >= set.accessoryIds.Count
+                    ? new Color(0.5f, 0.95f, 0.64f)
+                    : new Color(0.78f, 0.83f, 0.91f);
             }
         }
 

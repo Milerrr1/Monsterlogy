@@ -19,6 +19,8 @@ namespace Monstrology
         public PetRarity rarity;
         public AccessorySlot slot;
         public Sprite icon;
+        public string signatureSetId;
+        public BiomeType signatureBiome;
         [Min(0)] public int price;
         [Range(0f, 1f)] public float dropChance = 0.2f;
         public List<string> allowedSpeciesIds = new List<string>();

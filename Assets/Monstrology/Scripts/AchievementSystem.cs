@@ -19,18 +19,29 @@ namespace Monstrology
         private GameManager game;
         private CreatureCollectionManager collection;
         private BreedingSystem evolution;
+        private CreatureNestSystem nests;
+        private SignatureSetSystem signatureSets;
+        private PetUpgradeSystem upgrades;
 
         public event Action AchievementsChanged;
 
         public void Initialize(
             GameManager gameManager,
             CreatureCollectionManager collectionManager,
-            BreedingSystem evolutionSystem)
+            BreedingSystem evolutionSystem,
+            CreatureNestSystem nestSystem = null,
+            SignatureSetSystem signatureSetSystem = null,
+            PetUpgradeSystem upgradeSystem = null)
         {
             Unsubscribe();
             game = gameManager;
             collection = collectionManager;
             evolution = evolutionSystem;
+            nests = nestSystem != null ? nestSystem : FindObjectOfType<CreatureNestSystem>();
+            signatureSets = signatureSetSystem != null
+                ? signatureSetSystem
+                : FindObjectOfType<SignatureSetSystem>();
+            upgrades = upgradeSystem != null ? upgradeSystem : FindObjectOfType<PetUpgradeSystem>();
             BuildDefinitions();
 
             if (game != null)
@@ -43,6 +54,21 @@ namespace Monstrology
             if (evolution != null)
             {
                 evolution.SpeciesEvolved += HandleSpeciesEvolved;
+            }
+
+            if (nests != null)
+            {
+                nests.NestDiscovered += HandleNestDiscovered;
+            }
+
+            if (signatureSets != null)
+            {
+                signatureSets.FullSetCompleted += HandleFullSetCompleted;
+            }
+
+            if (upgrades != null)
+            {
+                upgrades.PetLeveled += HandlePetLeveled;
             }
 
             EvaluateAll();
@@ -96,6 +122,26 @@ namespace Monstrology
                 title = "Первая эволюция",
                 description = "Эволюционировать вид."
             });
+            definitions.Add(new AchievementDefinition
+            {
+                id = "first_nest",
+                title = "Первое логово",
+                description = "Обнаружить первое логовище существа."
+            });
+            definitions.Add(new AchievementDefinition
+            {
+                id = "first_full_set",
+                title = "Первый полный комплект",
+                description = "Собрать все три предмета сигнатурного комплекта."
+            });
+            definitions.Add(new AchievementDefinition
+            {
+                id = "first_pet_level_10",
+                title = "Опытный любимчик",
+                description = "Повысить питомца до 10 уровня."
+            });
+            AddBiomeAchievement("complete_tundra", "Полная энциклопедия тундры", BiomeType.Tundra);
+            AddBiomeAchievement("complete_volcano", "Полная энциклопедия вулкана", BiomeType.Volcano);
         }
 
         private void EvaluateAll()
@@ -137,6 +183,25 @@ namespace Monstrology
             {
                 Unlock("first_evolution");
             }
+
+            if (nests != null && nests.GetAllNests().Count > 0)
+            {
+                Unlock("first_nest");
+            }
+
+            if (game.GetCompletedSignatureSets().Count > 0)
+            {
+                Unlock("first_full_set");
+            }
+
+            if (collection != null &&
+                collection.GetAllPets().Any(pet => pet != null && pet.level >= 10))
+            {
+                Unlock("first_pet_level_10");
+            }
+
+            EvaluateBiomeAchievement("complete_tundra", BiomeType.Tundra);
+            EvaluateBiomeAchievement("complete_volcano", BiomeType.Volcano);
         }
 
         private void HandleCreatureRegistered(CreatureData creature, bool firstDiscovery)
@@ -163,6 +228,42 @@ namespace Monstrology
         private void HandleSpeciesEvolved(string baseSpeciesId, string resultSpeciesId)
         {
             Unlock("first_evolution");
+        }
+
+        private void HandleNestDiscovered(string nestId)
+        {
+            Unlock("first_nest");
+        }
+
+        private void HandleFullSetCompleted(string setId)
+        {
+            Unlock("first_full_set");
+        }
+
+        private void HandlePetLeveled(CreatureInstance pet)
+        {
+            if (pet != null && pet.level >= 10)
+            {
+                Unlock("first_pet_level_10");
+            }
+        }
+
+        private void AddBiomeAchievement(string id, string title, BiomeType biome)
+        {
+            definitions.Add(new AchievementDefinition
+            {
+                id = id,
+                title = title,
+                description = "Открыть всех существ биома «" + Localization.Biome(biome) + "»."
+            });
+        }
+
+        private void EvaluateBiomeAchievement(string id, BiomeType biome)
+        {
+            if (game != null && game.IsBiomeEncyclopediaComplete(biome))
+            {
+                Unlock(id);
+            }
         }
 
         private void HandleProgressReset()
@@ -204,6 +305,21 @@ namespace Monstrology
             if (evolution != null)
             {
                 evolution.SpeciesEvolved -= HandleSpeciesEvolved;
+            }
+
+            if (nests != null)
+            {
+                nests.NestDiscovered -= HandleNestDiscovered;
+            }
+
+            if (signatureSets != null)
+            {
+                signatureSets.FullSetCompleted -= HandleFullSetCompleted;
+            }
+
+            if (upgrades != null)
+            {
+                upgrades.PetLeveled -= HandlePetLeveled;
             }
         }
     }
