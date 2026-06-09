@@ -7,16 +7,22 @@ namespace Monstrology
     {
         private GameManager game;
         private CreatureCollectionManager collection;
+        private AccessoryInventoryManager accessoryInventory;
+        private PetUpgradeSystem upgrades;
         private Transform content;
         private string selectedPetId;
 
         public void Initialize(
             GameManager gameManager,
             CreatureCollectionManager collectionManager,
-            Transform contentRoot)
+            Transform contentRoot,
+            AccessoryInventoryManager inventoryManager = null,
+            PetUpgradeSystem upgradeSystem = null)
         {
             game = gameManager;
             collection = collectionManager;
+            accessoryInventory = inventoryManager;
+            upgrades = upgradeSystem;
             content = contentRoot;
 
             if (collection != null)
@@ -95,7 +101,7 @@ namespace Monstrology
             Image card = UIFactory.Image("SelectedPet", content, new Color(0.1f, 0.14f, 0.21f));
             UIFactory.ApplyRounded(card);
             UIFactory.AddSoftShadow(card.gameObject);
-            UIFactory.SetLayoutHeight(card.gameObject, 190f);
+            UIFactory.SetLayoutHeight(card.gameObject, 360f);
 
             Image portrait = UIFactory.Image("Portrait", card.transform, Color.white);
             UIFactory.SetRect(portrait.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
@@ -107,6 +113,7 @@ namespace Monstrology
                 ? Color.white
                 : PetLocalization.RarityColor(pet.rarity);
             portrait.preserveAspect = true;
+            AccessoryVisualUtility.BuildUiVisuals(portrait.transform, pet, accessoryInventory);
 
             string favorite = pet.isFavorite ? "ЛЮБИМЧИК  |  " : "";
             Text name = UIFactory.Text(
@@ -121,12 +128,13 @@ namespace Monstrology
             name.color = PetLocalization.RarityColor(pet.rarity);
 
             string speciesName = species != null ? species.creatureName : pet.speciesId;
-            int nextLevel = collection.GetExperienceForNextLevel(pet);
             Text details = UIFactory.Text(
                 "Details",
                 card.transform,
                 "Вид: " + speciesName +
-                "\nУровень: " + pet.level + "   Опыт: " + pet.experience + "/" + nextLevel +
+                "\nУровень: " + pet.level + " / " + PetUpgradeSystem.MaxLevel +
+                "\nОпыт: " + pet.experience +
+                "\nКопий собрано: " + game.GetCreatureCount(pet.speciesId) +
                 "\nРедкость: " + PetLocalization.Rarity(pet.rarity) +
                 "\nХарактер: " + PetLocalization.Personality(pet.personalityType) +
                 "\nВозраст: " + FormatAge(pet.ageInDays),
@@ -134,8 +142,20 @@ namespace Monstrology
                 FontStyle.Normal,
                 TextAnchor.UpperLeft);
             UIFactory.SetOffsets(details.rectTransform, Vector2.zero, Vector2.one,
-                new Vector2(178f, 20f), new Vector2(-250f, -58f));
+                new Vector2(178f, 96f), new Vector2(-250f, -58f));
             details.color = new Color(0.84f, 0.88f, 0.94f);
+
+            Text genes = UIFactory.Text(
+                "Genes",
+                card.transform,
+                PetDetailsPanel.BuildGeneticsText(pet) + "\n" +
+                PetDetailsPanel.BuildAccessoryText(pet, accessoryInventory),
+                14,
+                FontStyle.Normal,
+                TextAnchor.UpperLeft);
+            UIFactory.SetOffsets(genes.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(24f, 18f), new Vector2(-250f, -252f));
+            genes.color = new Color(0.72f, 0.88f, 0.92f);
 
             InputField renameInput = UIFactory.InputField(
                 "RenameInput",
@@ -148,10 +168,55 @@ namespace Monstrology
             Button rename = UIFactory.Button("Rename", card.transform, "СОХРАНИТЬ ИМЯ",
                 new Color(0.26f, 0.52f, 0.72f));
             UIFactory.SetRect(rename.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f), new Vector2(-22f, 10f), new Vector2(220f, 42f));
+                new Vector2(1f, 0.5f), new Vector2(-22f, 86f), new Vector2(220f, 42f));
             rename.onClick.AddListener(delegate
             {
                 collection.RenamePet(pet.uniqueId, renameInput.text);
+            });
+
+            ItemData resource = upgrades != null ? upgrades.GetRequiredResource(pet) : null;
+            int required = upgrades != null ? upgrades.GetRequiredResourceCount(pet) : 0;
+            int owned = resource != null ? game.GetItemCount(resource.id) : 0;
+            Text upgradeInfo = UIFactory.Text(
+                "UpgradeInfo",
+                card.transform,
+                "Ресурс: " + (resource != null ? resource.itemName : "не назначен") +
+                "\nВ наличии: " + owned + " / " + required,
+                14,
+                FontStyle.Normal,
+                TextAnchor.MiddleLeft);
+            UIFactory.SetRect(
+                upgradeInfo.rectTransform,
+                new Vector2(1f, 0.5f),
+                new Vector2(1f, 0.5f),
+                new Vector2(1f, 0.5f),
+                new Vector2(-22f, 20f),
+                new Vector2(220f, 62f));
+            upgradeInfo.color = new Color(0.86f, 0.91f, 0.98f);
+
+            string upgradeReason;
+            bool canUpgrade = upgrades != null && upgrades.CanUpgrade(pet, out upgradeReason);
+            Button upgradeButton = UIFactory.Button(
+                "Upgrade",
+                card.transform,
+                pet.level >= PetUpgradeSystem.MaxLevel ? "МАКС. УРОВЕНЬ" : "ПОВЫСИТЬ УРОВЕНЬ",
+                new Color(0.25f, 0.62f, 0.46f));
+            UIFactory.SetRect(
+                upgradeButton.GetComponent<RectTransform>(),
+                new Vector2(1f, 0.5f),
+                new Vector2(1f, 0.5f),
+                new Vector2(1f, 0.5f),
+                new Vector2(-22f, -42f),
+                new Vector2(220f, 44f));
+            upgradeButton.interactable = canUpgrade;
+            upgradeButton.onClick.AddListener(() =>
+            {
+                bool upgraded = upgrades.UpgradePet(pet);
+                game.RaiseNotification(upgrades.LastMessage);
+                if (upgraded)
+                {
+                    Rebuild();
+                }
             });
 
             Button favoriteButton = UIFactory.Button(
@@ -192,6 +257,7 @@ namespace Monstrology
                 ? Color.white
                 : PetLocalization.RarityColor(pet.rarity);
             portrait.preserveAspect = true;
+            AccessoryVisualUtility.BuildUiVisuals(portrait.transform, pet, accessoryInventory);
 
             Text title = UIFactory.Text(
                 "Name",
@@ -209,6 +275,7 @@ namespace Monstrology
                 "Details",
                 row.transform,
                 speciesName + "  |  Ур. " + pet.level + "  |  " +
+                "Копий: " + game.GetCreatureCount(pet.speciesId) + "  |  " +
                 PetLocalization.Rarity(pet.rarity) + "  |  " +
                 PetLocalization.Personality(pet.personalityType) + "  |  " +
                 FormatAge(pet.ageInDays),

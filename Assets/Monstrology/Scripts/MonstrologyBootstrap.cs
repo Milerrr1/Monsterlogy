@@ -39,6 +39,14 @@ namespace Monstrology
             GameContent content = useRuntimeDemoContent ? DemoContentFactory.Create() : authoredContent;
             game.Initialize(content);
 
+            WorldEnvironmentSystem environment = GetComponent<WorldEnvironmentSystem>();
+            if (environment == null)
+            {
+                environment = gameObject.AddComponent<WorldEnvironmentSystem>();
+            }
+
+            environment.Initialize(game);
+
             ExplorationSystem exploration = GetComponent<ExplorationSystem>();
             if (exploration == null)
             {
@@ -46,14 +54,6 @@ namespace Monstrology
             }
 
             exploration.Initialize(game);
-
-            MutationSystem mutations = GetComponent<MutationSystem>();
-            if (mutations == null)
-            {
-                mutations = gameObject.AddComponent<MutationSystem>();
-            }
-
-            mutations.Initialize(game);
 
             QuestSystem quests = GetComponent<QuestSystem>();
             if (quests == null)
@@ -71,6 +71,39 @@ namespace Monstrology
 
             petCollection.Initialize(game);
 
+            AccessoryInventoryManager accessoryInventory = GetComponent<AccessoryInventoryManager>();
+            if (accessoryInventory == null)
+            {
+                accessoryInventory = gameObject.AddComponent<AccessoryInventoryManager>();
+            }
+
+            accessoryInventory.Initialize(game, petCollection);
+            exploration.Initialize(game, accessoryInventory);
+
+            BreedingSystem breeding = GetComponent<BreedingSystem>();
+            if (breeding == null)
+            {
+                breeding = gameObject.AddComponent<BreedingSystem>();
+            }
+
+            breeding.Initialize(game, petCollection);
+
+            PetUpgradeSystem upgrades = GetComponent<PetUpgradeSystem>();
+            if (upgrades == null)
+            {
+                upgrades = gameObject.AddComponent<PetUpgradeSystem>();
+            }
+
+            upgrades.Initialize(game, petCollection);
+
+            AchievementSystem achievements = GetComponent<AchievementSystem>();
+            if (achievements == null)
+            {
+                achievements = gameObject.AddComponent<AchievementSystem>();
+            }
+
+            achievements.Initialize(game, petCollection, breeding);
+
             PlayerController2D player = FindObjectOfType<PlayerController2D>();
             if (player == null)
             {
@@ -84,6 +117,14 @@ namespace Monstrology
             }
 
             interaction.Initialize(player.transform);
+
+            FollowPetController followPet = GetComponent<FollowPetController>();
+            if (followPet == null)
+            {
+                followPet = gameObject.AddComponent<FollowPetController>();
+            }
+
+            followPet.Initialize(player, petCollection, accessoryInventory);
 
             Camera worldCamera = Camera.main;
             if (worldCamera == null)
@@ -118,7 +159,24 @@ namespace Monstrology
                 ui = gameObject.AddComponent<UIManager>();
             }
 
-            ui.Initialize(game, exploration, mutations, quests, player, interaction, petCollection);
+            ui.Initialize(
+                game,
+                exploration,
+                quests,
+                player,
+                interaction,
+                petCollection,
+                accessoryInventory,
+                breeding,
+                upgrades);
+
+            PetSystemDebugTools debugTools = GetComponent<PetSystemDebugTools>();
+            if (debugTools == null)
+            {
+                debugTools = gameObject.AddComponent<PetSystemDebugTools>();
+            }
+
+            debugTools.Initialize(game, petCollection, accessoryInventory, breeding);
             bridge.LoadProgress();
         }
 
@@ -156,12 +214,14 @@ namespace Monstrology
             Dictionary<BiomeType, BiomeData> biomes = CreateBiomes(content);
             Dictionary<string, CreatureData> creatures = CreateCreatures(content);
             CreateItems(content);
+            CreateAccessories(content);
             CreateQuests(content);
-            CreateMutations(content);
+            CreateEvolutions(content);
 
             foreach (CreatureData creature in content.creatures)
             {
-                if (creature.id == "fire_wolf" || creature.id == "cosmo_cat")
+                if (creature.id == "galactic_bread_cat" || creature.id == "steam_saur" ||
+                    creature.id == "glow_mushroom" || IsEvolutionResult(content, creature.id))
                 {
                     continue;
                 }
@@ -201,12 +261,24 @@ namespace Monstrology
             AddCreature(content, result, "bread_cat", "Хлебокот",
                 "Тёплый кот с ароматной корочкой. Любит устраиваться рядом с рюкзаком.",
                 CreatureRarity.Common, CreatureElement.Nature, BiomeType.Forest, 1.2f, new Color(0.86f, 0.57f, 0.28f));
+            AddCreature(content, result, "bread_cat_ii", "Хлебокот II",
+                "Укреплённая форма Хлебокота с особенно хрустящей корочкой.",
+                CreatureRarity.Rare, CreatureElement.Nature, BiomeType.Forest, 0f, new Color(0.92f, 0.64f, 0.3f));
+            AddCreature(content, result, "bread_cat_iii", "Хлебокот III",
+                "Опытный хранитель пекарских тайн.",
+                CreatureRarity.Rare, CreatureElement.Nature, BiomeType.Forest, 0f, new Color(0.98f, 0.72f, 0.34f));
+            AddCreature(content, result, "bread_cat_king", "Король Хлебокотов",
+                "Высшая форма Хлебокота, открываемая только упорным коллекционерам.",
+                CreatureRarity.Legendary, CreatureElement.Nature, BiomeType.Forest, 0f, new Color(1f, 0.8f, 0.28f));
             AddCreature(content, result, "tv_horn", "Телевизорог",
                 "Его экран показывает погоду, но только вчерашнюю.",
                 CreatureRarity.Rare, CreatureElement.Electric, BiomeType.Forest, 0.72f, new Color(0.37f, 0.72f, 0.83f));
             AddCreature(content, result, "mushroom_fox", "Гриболис",
                 "Тихий лесной хитрец. На его шляпках светятся споры.",
                 CreatureRarity.Common, CreatureElement.Nature, BiomeType.Forest, 1.05f, new Color(0.65f, 0.31f, 0.38f));
+            AddCreature(content, result, "mushroom_fox_ii", "Гриболис II",
+                "Развитая форма с яркими защитными спорами.",
+                CreatureRarity.Rare, CreatureElement.Nature, BiomeType.Forest, 0f, new Color(0.74f, 0.38f, 0.48f));
             AddCreature(content, result, "kitten", "Котёнок",
                 "Любопытный путешественник, готовый к удивительным превращениям.",
                 CreatureRarity.Common, CreatureElement.Nature, BiomeType.Forest, 0.9f, new Color(0.84f, 0.68f, 0.48f));
@@ -225,10 +297,16 @@ namespace Monstrology
             AddCreature(content, result, "ice_saur", "Ледозавр",
                 "Его прозрачный гребень звенит, когда начинается снег.",
                 CreatureRarity.Rare, CreatureElement.Ice, BiomeType.Tundra, 0.85f, new Color(0.48f, 0.82f, 0.96f));
+            AddCreature(content, result, "ice_saur_ii", "Ледозавр II",
+                "Закалённая форма с ледяной бронёй.",
+                CreatureRarity.Epic, CreatureElement.Ice, BiomeType.Tundra, 0f, new Color(0.58f, 0.9f, 1f));
 
             AddCreature(content, result, "magma_orb", "Магмошар",
                 "Круглый обитатель лавовых троп. Остывает, когда смущается.",
                 CreatureRarity.Common, CreatureElement.Fire, BiomeType.Volcano, 1.0f, new Color(0.95f, 0.32f, 0.12f));
+            AddCreature(content, result, "magma_orb_ii", "Магмошар II",
+                "Более горячая и устойчивая форма Магмошара.",
+                CreatureRarity.Rare, CreatureElement.Fire, BiomeType.Volcano, 0f, new Color(1f, 0.45f, 0.12f));
             AddCreature(content, result, "fire_wolf", "Огненный Волчонок",
                 "Новая форма Волчонка. Его хвост освещает путь и не обжигает друзей.",
                 CreatureRarity.Epic, CreatureElement.Fire, BiomeType.Volcano, 0.05f, new Color(1f, 0.43f, 0.12f));
@@ -242,7 +320,10 @@ namespace Monstrology
                 CreatureRarity.Legendary, CreatureElement.Space, BiomeType.Space, 0.65f, new Color(0.58f, 0.42f, 0.94f));
             AddCreature(content, result, "cosmo_cat", "Космокот",
                 "Мурлычет на частоте далёких спутников и оставляет невесомые следы.",
-                CreatureRarity.Epic, CreatureElement.Space, BiomeType.Space, 0.05f, new Color(0.42f, 0.48f, 0.98f));
+                CreatureRarity.Epic, CreatureElement.Space, BiomeType.Space, 0.35f, new Color(0.42f, 0.48f, 0.98f));
+            AddCreature(content, result, "cosmo_cat_ii", "Космокот II",
+                "Космическая форма, накопившая достаточно звёздной пыли.",
+                CreatureRarity.Legendary, CreatureElement.Space, BiomeType.Space, 0f, new Color(0.58f, 0.52f, 1f));
 
             CreatureData dragon = AddCreature(content, result, "mushroom_dragon", "Грибной Дракон",
                 "Секретный хранитель леса. Его крылья распускаются после долгих исследований.",
@@ -250,26 +331,54 @@ namespace Monstrology
             dragon.appearanceConditions.Add(ElementCondition(CreatureElement.Nature, 3));
             dragon.appearanceConditions.Add(ItemCondition("glowing_mushroom"));
             dragon.appearanceConditions.Add(ExplorationCondition(15));
+
+            AddCreature(content, result, "galactic_bread_cat", "Галактический Хлебокот",
+                "Редкий потомок Хлебокота и Космокота, пахнущий звёздной выпечкой.",
+                CreatureRarity.Legendary, CreatureElement.Space, BiomeType.Space, 0.01f,
+                new Color(0.82f, 0.5f, 0.88f));
+            AddCreature(content, result, "steam_saur", "Парозавр",
+                "Потомок льда и огня. За ним остаётся тёплый облачный след.",
+                CreatureRarity.Legendary, CreatureElement.Fire, BiomeType.Volcano, 0.01f,
+                new Color(0.58f, 0.72f, 0.82f));
+            AddCreature(content, result, "glow_mushroom", "Светогриб",
+                "Светящийся гибрид Гриболиса и Лампакраба.",
+                CreatureRarity.Epic, CreatureElement.Mystery, BiomeType.Ocean, 0.01f,
+                new Color(0.38f, 0.92f, 0.68f));
+
+            result["tv_horn"].allowedTimes.Add(TimeOfDay.Evening);
+            result["mushroom_fox"].allowedTimes.Add(TimeOfDay.Morning);
+            result["cosmo_cat"].allowedTimes.Add(TimeOfDay.Night);
+            result["mushroom_dragon"].allowedWeather.Add(WeatherType.Fog);
+            result["astro_fox"].allowedWeather.Add(WeatherType.MeteorShower);
             return result;
         }
 
         private static void CreateItems(GameContent content)
         {
             AddItem(content, "fire_stone", "Огненный камень",
-                "Тёплый катализатор для мутаций.", ItemKind.MutationCatalyst, BiomeType.Volcano,
-                new Color(1f, 0.35f, 0.12f));
+                "Ресурс для повышения уровня Магмошара.", ItemKind.UpgradeResource, BiomeType.Volcano,
+                new Color(1f, 0.35f, 0.12f), "magma_orb");
+            AddItem(content, "ice_crystal", "Ледяной кристалл",
+                "Ресурс для повышения уровня Ледозавра.", ItemKind.UpgradeResource, BiomeType.Tundra,
+                new Color(0.52f, 0.86f, 1f), "ice_saur");
             AddItem(content, "space_dust", "Космическая пыль",
-                "Искрится даже в закрытой банке.", ItemKind.MutationCatalyst, BiomeType.Space,
-                new Color(0.55f, 0.45f, 1f));
+                "Ресурс для повышения уровня Космокота.", ItemKind.UpgradeResource, BiomeType.Space,
+                new Color(0.55f, 0.45f, 1f), "cosmo_cat");
+            AddItem(content, "mushroom_spore", "Грибная спора",
+                "Ресурс для повышения уровня Гриболиса.", ItemKind.UpgradeResource, BiomeType.Forest,
+                new Color(0.7f, 0.38f, 0.58f), "mushroom_fox");
+            AddItem(content, "bread_crumbs", "Золотые крошки",
+                "Ресурс для повышения уровня Хлебокота.", ItemKind.UpgradeResource, BiomeType.Forest,
+                new Color(0.92f, 0.68f, 0.3f), "bread_cat");
             AddItem(content, "glowing_mushroom", "Светящийся гриб",
                 "Редкий лесной образец. Может привлечь тайного хранителя.", ItemKind.Material, BiomeType.Forest,
-                new Color(0.78f, 0.34f, 0.85f));
+                new Color(0.78f, 0.34f, 0.85f), "mushroom_dragon");
             AddItem(content, "pearl_shell", "Жемчужная ракушка",
                 "Тихо повторяет звуки океана.", ItemKind.Material, BiomeType.Ocean,
-                new Color(0.44f, 0.85f, 0.92f));
+                new Color(0.44f, 0.85f, 0.92f), "lamp_crab");
             AddItem(content, "mystery_egg", "Загадочное яйцо",
                 "Пока не вылупляется, но отлично дополняет коллекцию.", ItemKind.Egg, BiomeType.Tundra,
-                new Color(0.86f, 0.72f, 0.95f));
+                new Color(0.86f, 0.72f, 0.95f), "kitten");
         }
 
         private static void CreateQuests(GameContent content)
@@ -282,26 +391,41 @@ namespace Monstrology
                 QuestGoalType.UnlockBiome, 1, BiomeType.Desert, 55, 4);
             AddQuest(content, "ten_creatures", "Настоящая коллекция", "Найдите 10 существ, повторы считаются.",
                 QuestGoalType.FindCreatureCopies, 10, BiomeType.Forest, 90, 6);
-            AddQuest(content, "first_mutation", "Научный прорыв", "Проведите первую успешную мутацию.",
-                QuestGoalType.CompleteMutations, 1, BiomeType.Forest, 100, 5);
             AddQuest(content, "find_secret", "За гранью справочника", "Найдите секретное существо.",
                 QuestGoalType.FindSecretCreature, 1, BiomeType.Forest, 180, 10);
         }
 
-        private static void CreateMutations(GameContent content)
+        private static void CreateAccessories(GameContent content)
         {
-            content.mutationRecipes.Add(new MutationRecipe
-            {
-                baseCreatureId = "wolf_cub",
-                itemId = "fire_stone",
-                resultCreatureId = "fire_wolf"
-            });
-            content.mutationRecipes.Add(new MutationRecipe
-            {
-                baseCreatureId = "kitten",
-                itemId = "space_dust",
-                resultCreatureId = "cosmo_cat"
-            });
+            AddAccessory(content, "straw_hat", "Соломенная шляпа", "Лёгкая шляпа исследователя.",
+                PetRarity.Common, AccessorySlot.Head, 0.55f, new Color(0.86f, 0.66f, 0.28f),
+                new Vector2(0f, 0.62f), new Vector2(1.2f, 0.55f));
+            AddAccessory(content, "round_glasses", "Круглые очки", "Добавляют питомцу учёный вид.",
+                PetRarity.Uncommon, AccessorySlot.Head, 0.34f, new Color(0.35f, 0.78f, 0.96f),
+                new Vector2(0f, 0.12f), new Vector2(1.1f, 0.35f));
+            AddAccessory(content, "forest_scarf", "Лесной шарф", "Мягкий шарф цвета молодой листвы.",
+                PetRarity.Uncommon, AccessorySlot.Body, 0.28f, new Color(0.3f, 0.8f, 0.44f),
+                new Vector2(0f, -0.32f), new Vector2(1.15f, 0.3f));
+            AddAccessory(content, "explorer_pack", "Рюкзак исследователя", "В нём помещается пара важных находок.",
+                PetRarity.Rare, AccessorySlot.Body, 0.16f, new Color(0.74f, 0.42f, 0.2f),
+                new Vector2(-0.42f, 0f), new Vector2(0.55f, 0.8f));
+            AddAccessory(content, "comet_tail", "Кометный хвост", "Оставляет короткий след звёздной пыли.",
+                PetRarity.Epic, AccessorySlot.Legs, 0.08f, new Color(0.64f, 0.48f, 1f),
+                new Vector2(0.48f, -0.12f), new Vector2(0.7f, 0.35f));
+            AddAccessory(content, "mythic_aura", "Мифическая аура", "Редкое сияние вокруг питомца.",
+                PetRarity.Mythic, AccessorySlot.Body, 0.025f, new Color(1f, 0.34f, 0.72f),
+                Vector2.zero, new Vector2(1.8f, 1.8f));
+        }
+
+        private static void CreateEvolutions(GameContent content)
+        {
+            AddEvolution(content, "bread_cat", 100, "bread_cat_ii");
+            AddEvolution(content, "bread_cat_ii", 100, "bread_cat_iii");
+            AddEvolution(content, "bread_cat_iii", 100, "bread_cat_king");
+            AddEvolution(content, "ice_saur", 100, "ice_saur_ii");
+            AddEvolution(content, "magma_orb", 100, "magma_orb_ii");
+            AddEvolution(content, "cosmo_cat", 100, "cosmo_cat_ii");
+            AddEvolution(content, "mushroom_fox", 100, "mushroom_fox_ii");
         }
 
         private static void AddBiome(GameContent content, IDictionary<BiomeType, BiomeData> target,
@@ -348,7 +472,7 @@ namespace Monstrology
         }
 
         private static void AddItem(GameContent content, string id, string title, string description,
-            ItemKind kind, BiomeType biome, Color color)
+            ItemKind kind, BiomeType biome, Color color, string requiredSpeciesId)
         {
             ItemData item = ScriptableObject.CreateInstance<ItemData>();
             item.hideFlags = HideFlags.DontSave;
@@ -357,6 +481,7 @@ namespace Monstrology
             item.description = description;
             item.kind = kind;
             item.preferredBiome = biome;
+            item.requiredSpeciesId = requiredSpeciesId;
             item.icon = RuntimeIconFactory.CreateItemIcon(color);
             content.items.Add(item);
         }
@@ -375,6 +500,52 @@ namespace Monstrology
             quest.rewardCoins = coins;
             quest.rewardEnergy = energy;
             content.quests.Add(quest);
+        }
+
+        private static void AddAccessory(
+            GameContent content,
+            string id,
+            string title,
+            string description,
+            PetRarity rarity,
+            AccessorySlot slot,
+            float dropChance,
+            Color color,
+            Vector2 offset,
+            Vector2 scale)
+        {
+            AccessoryData accessory = ScriptableObject.CreateInstance<AccessoryData>();
+            accessory.hideFlags = HideFlags.DontSave;
+            accessory.id = id;
+            accessory.displayName = title;
+            accessory.description = description;
+            accessory.rarity = rarity;
+            accessory.slot = slot;
+            accessory.dropChance = dropChance;
+            accessory.icon = RuntimeIconFactory.CreateItemIcon(color);
+            accessory.visualOffset = offset;
+            accessory.visualScale = scale;
+            content.accessories.Add(accessory);
+        }
+
+        private static void AddEvolution(
+            GameContent content,
+            string baseSpeciesId,
+            int requiredCopies,
+            string resultSpeciesId)
+        {
+            SpeciesEvolutionData evolution = ScriptableObject.CreateInstance<SpeciesEvolutionData>();
+            evolution.hideFlags = HideFlags.DontSave;
+            evolution.baseSpeciesId = baseSpeciesId;
+            evolution.requiredCopies = requiredCopies;
+            evolution.resultSpeciesId = resultSpeciesId;
+            content.speciesEvolutions.Add(evolution);
+        }
+
+        private static bool IsEvolutionResult(GameContent content, string speciesId)
+        {
+            return content.speciesEvolutions.Exists(evolution =>
+                evolution != null && evolution.resultSpeciesId == speciesId);
         }
 
         private static AppearanceCondition ExplorationCondition(int count)

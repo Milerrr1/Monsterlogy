@@ -19,12 +19,18 @@ namespace Monstrology
         private BiomeData loadedBiome;
         private BiomeMapData currentMapData;
         private GameObject currentMap;
+        private InfiniteBiomeMap infiniteMap;
+        private WorldNavigationGuide navigationGuide;
+        private TrackChainSystem trackChains;
         private float respawnTimer;
+        private float maintenanceTimer;
         private bool switchingMap;
 
         public BiomeData LoadedBiome { get { return loadedBiome; } }
         public BiomeMapData CurrentMapData { get { return currentMapData; } }
         public int ActivePickupCount { get { return activePickups.Count; } }
+        public InfiniteBiomeMap InfiniteMap { get { return infiniteMap; } }
+        public WorldNavigationGuide NavigationGuide { get { return navigationGuide; } }
 
         public void Initialize(
             GameManager gameManager,
@@ -37,6 +43,24 @@ namespace Monstrology
             player = playerController;
             cameraFollow = followCamera;
             worldCamera = cameraFollow != null ? cameraFollow.GetComponent<Camera>() : Camera.main;
+
+            navigationGuide = GetComponentInChildren<WorldNavigationGuide>(true);
+            if (navigationGuide == null)
+            {
+                GameObject guideObject = new GameObject("ExplorerCompassGuide");
+                guideObject.transform.SetParent(transform, false);
+                navigationGuide = guideObject.AddComponent<WorldNavigationGuide>();
+            }
+
+            navigationGuide.Initialize(player != null ? player.transform : null);
+
+            trackChains = GetComponent<TrackChainSystem>();
+            if (trackChains == null)
+            {
+                trackChains = gameObject.AddComponent<TrackChainSystem>();
+            }
+
+            trackChains.Initialize(this);
 
             if (worldRoot == null)
             {
@@ -69,6 +93,14 @@ namespace Monstrology
             }
 
             activePickups.RemoveWhere(pickup => pickup == null);
+            maintenanceTimer -= Time.deltaTime;
+            if (maintenanceTimer <= 0f)
+            {
+                RefreshSpawnPointsNearPlayer();
+                RecycleDistantPickups();
+                maintenanceTimer = 1f;
+            }
+
             int targetCount = Mathf.Max(0, currentMapData.activeFindings);
             if (activePickups.Count >= targetCount)
             {
@@ -95,6 +127,11 @@ namespace Monstrology
                 activePickups.Remove(pickup);
             }
 
+            if (navigationGuide != null)
+            {
+                navigationGuide.ClearTarget(pickup);
+            }
+
             if (currentMapData != null)
             {
                 respawnTimer = Mathf.Max(0.25f, currentMapData.respawnInterval);
@@ -106,7 +143,10 @@ namespace Monstrology
             if (game != null && game.CurrentBiome != loadedBiome)
             {
                 LoadBiome(game.CurrentBiome);
+                return;
             }
+
+            ApplyEnvironmentVisuals();
         }
 
         private void LoadBiome(BiomeData biome, bool force = false)
@@ -132,6 +172,7 @@ namespace Monstrology
             }
 
             AddDataBackground(currentMap, currentMapData);
+            DisableMapBoundaries(currentMap);
             ResolveSpawnPoints();
             ConfigureCamera();
             MovePlayerToStart();
@@ -172,6 +213,11 @@ namespace Monstrology
         {
             activePickups.Clear();
             spawnPoints.Clear();
+            infiniteMap = null;
+            if (navigationGuide != null)
+            {
+                navigationGuide.ClearTarget();
+            }
 
             if (currentMap != null)
             {
@@ -186,7 +232,6 @@ namespace Monstrology
             GameObject map = new GameObject(biome.type + "MapPrefab_Runtime");
             map.transform.SetParent(worldRoot, false);
 
-            CreateBoundary(map.transform, data.worldSize);
             CreateFallbackDecorations(map.transform, data.backgroundColor);
             CreateFallbackSpawnPoints(map.transform, biome.type);
             return map;
@@ -199,26 +244,31 @@ namespace Monstrology
                 return;
             }
 
+            Sprite sprite = data.background != null ? data.background : WorldPlaceholderSprites.Square;
+            Color color = data.background != null ? Color.white : data.backgroundColor;
             Transform existing = map.transform.Find("Background");
             if (existing != null)
             {
-                return;
+                SpriteRenderer existingRenderer = existing.GetComponent<SpriteRenderer>();
+                if (existingRenderer != null)
+                {
+                    sprite = existingRenderer.sprite != null ? existingRenderer.sprite : sprite;
+                    color = existingRenderer.color;
+                    existingRenderer.enabled = false;
+                }
             }
 
-            GameObject backgroundObject = new GameObject("Background");
-            backgroundObject.transform.SetParent(map.transform, false);
-            backgroundObject.transform.localPosition = new Vector3(0f, 0f, 1f);
-            SpriteRenderer renderer = backgroundObject.AddComponent<SpriteRenderer>();
-            renderer.sprite = data.background != null ? data.background : WorldPlaceholderSprites.Square;
-            renderer.color = data.background != null ? Color.white : data.backgroundColor;
-            renderer.sortingOrder = -100;
-            renderer.drawMode = SpriteDrawMode.Simple;
+            infiniteMap = map.GetComponent<InfiniteBiomeMap>();
+            if (infiniteMap == null)
+            {
+                infiniteMap = map.AddComponent<InfiniteBiomeMap>();
+            }
 
-            Vector2 spriteSize = renderer.sprite.bounds.size;
-            backgroundObject.transform.localScale = new Vector3(
-                data.worldSize.x / Mathf.Max(0.01f, spriteSize.x),
-                data.worldSize.y / Mathf.Max(0.01f, spriteSize.y),
-                1f);
+            infiniteMap.Initialize(
+                sprite,
+                color,
+                data.worldSize,
+                player != null ? player.transform : null);
         }
 
         private void ResolveSpawnPoints()
@@ -253,11 +303,6 @@ namespace Monstrology
 
         private void ConfigureCamera()
         {
-            Vector2 size = currentMapData.worldSize;
-            Bounds bounds = new Bounds(
-                currentMap.transform.position,
-                new Vector3(Mathf.Max(1f, size.x), Mathf.Max(1f, size.y), 1f));
-
             if (worldCamera != null)
             {
                 worldCamera.orthographic = true;
@@ -272,8 +317,10 @@ namespace Monstrology
             RenderSettings.ambientLight = currentMapData.lightingColor;
             if (cameraFollow != null)
             {
-                cameraFollow.SetBounds(bounds);
+                cameraFollow.ClearBounds();
             }
+
+            ApplyEnvironmentVisuals();
         }
 
         private void MovePlayerToStart()
@@ -301,6 +348,7 @@ namespace Monstrology
         private void SpawnInitialPickups()
         {
             activePickups.Clear();
+            RefreshSpawnPointsNearPlayer();
             int count = Mathf.Min(
                 Mathf.Max(0, currentMapData.activeFindings),
                 spawnPoints.Count);
@@ -323,6 +371,7 @@ namespace Monstrology
                 return false;
             }
 
+            RefreshSpawnPointsNearPlayer();
             List<SpawnPoint> available = spawnPoints.FindAll(point => point != null && !point.IsOccupied);
             if (available.Count == 0)
             {
@@ -333,6 +382,7 @@ namespace Monstrology
             WorldPickupType type = RollPickupType();
             CreatureData creature = null;
             ItemData item = null;
+            AccessoryData accessory = null;
             TrackType track = exploration.SelectTrack();
 
             if (type == WorldPickupType.Creature)
@@ -362,17 +412,296 @@ namespace Monstrology
                     type = WorldPickupType.Trace;
                 }
             }
+            else if (type == WorldPickupType.Accessory)
+            {
+                accessory = exploration.SelectAccessory();
+                if (accessory == null)
+                {
+                    type = WorldPickupType.Trace;
+                }
+            }
+
+            if (type == WorldPickupType.Trace)
+            {
+                track = TrackType.Paws;
+            }
+
+            int chainStage = type == WorldPickupType.Trace ? 0 : -1;
+            return CreatePickup(
+                       spawnPoint.GetSpawnPosition(),
+                       type,
+                       creature,
+                       item,
+                       track,
+                       accessory,
+                       spawnPoint,
+                       chainStage) != null;
+        }
+
+        public void StartQuickSearch()
+        {
+            if (player == null || navigationGuide == null)
+            {
+                return;
+            }
+
+            WorldPickup nearest = FindNearestInterestingPickup();
+            if (nearest == null)
+            {
+                SpawnOnePickup();
+                nearest = FindNearestInterestingPickup();
+            }
+
+            if (nearest == null)
+            {
+                game.RaiseNotification("Компас пока не нашёл интересную цель.");
+                return;
+            }
+
+            navigationGuide.SetTarget(nearest);
+            game.RaiseNotification("Компас указывает направление. Доберитесь до цели сами.");
+        }
+
+        public void AdvanceTrackChain(WorldPickup trace)
+        {
+            if (trackChains != null)
+            {
+                trackChains.Advance(trace);
+            }
+        }
+
+        public void SpawnTrackStep(Vector3 position, TrackType trackType, int stage)
+        {
+            WorldPickup pickup = CreatePickup(
+                position,
+                WorldPickupType.Trace,
+                null,
+                null,
+                trackType,
+                null,
+                null,
+                stage);
+            if (navigationGuide != null)
+            {
+                navigationGuide.SetTarget(pickup);
+            }
+
+            game.RaiseNotification(stage >= 4
+                ? "Следы привели к логову."
+                : "Цепочка следов продолжается.");
+        }
+
+        public void SpawnTrackedCreature(Vector3 position)
+        {
+            IList<CreatureData> source = currentMapData.possibleCreatures.Count > 0
+                ? currentMapData.possibleCreatures
+                : loadedBiome.availableCreatures;
+            List<CreatureData> rare = new List<CreatureData>();
+            foreach (CreatureData creature in source)
+            {
+                if (creature != null && creature.rarity != CreatureRarity.Common &&
+                    game.AreAppearanceConditionsMet(creature))
+                {
+                    rare.Add(creature);
+                }
+            }
+
+            CreatureData selected = exploration.SelectCreature(rare.Count > 0 ? rare : source);
+            if (selected == null)
+            {
+                game.RaiseNotification("След оборвался: условия появления существа изменились.");
+                return;
+            }
+
+            WorldPickup pickup = CreatePickup(
+                position,
+                WorldPickupType.Creature,
+                selected,
+                null,
+                exploration.SelectTrack(),
+                null,
+                null,
+                -1);
+            if (navigationGuide != null)
+            {
+                navigationGuide.SetTarget(pickup);
+            }
+
+            game.RaiseNotification("Впереди редкое существо.");
+        }
+
+        private WorldPickup CreatePickup(
+            Vector3 position,
+            WorldPickupType type,
+            CreatureData creature,
+            ItemData item,
+            TrackType track,
+            AccessoryData accessory,
+            SpawnPoint spawnPoint,
+            int chainStage)
+        {
+            if (currentMap == null)
+            {
+                return null;
+            }
 
             GameObject pickupObject = new GameObject("Finding_" + type);
             pickupObject.transform.SetParent(currentMap.transform, true);
-            pickupObject.transform.position = spawnPoint.GetSpawnPosition();
+            pickupObject.transform.position = position;
             pickupObject.transform.localScale = Vector3.one * 1.05f;
             CircleCollider2D pickupCollider = pickupObject.AddComponent<CircleCollider2D>();
             pickupCollider.radius = 0.48f;
             WorldPickup pickup = pickupObject.AddComponent<WorldPickup>();
-            pickup.Initialize(type, creature, item, track, exploration, this, spawnPoint);
+            pickup.Initialize(
+                type,
+                creature,
+                item,
+                track,
+                exploration,
+                this,
+                spawnPoint,
+                accessory,
+                chainStage);
             activePickups.Add(pickup);
-            return true;
+            return pickup;
+        }
+
+        private WorldPickup FindNearestInterestingPickup()
+        {
+            WorldPickup nearest = null;
+            float nearestDistance = float.MaxValue;
+            Vector3 origin = player != null ? player.transform.position : Vector3.zero;
+            foreach (WorldPickup pickup in activePickups)
+            {
+                if (pickup == null || !pickup.CanInteract ||
+                    pickup.PickupType == WorldPickupType.Nothing)
+                {
+                    continue;
+                }
+
+                float distance = (pickup.transform.position - origin).sqrMagnitude;
+                if (distance < nearestDistance)
+                {
+                    nearest = pickup;
+                    nearestDistance = distance;
+                }
+            }
+
+            return nearest;
+        }
+
+        private void RefreshSpawnPointsNearPlayer()
+        {
+            if (player == null || spawnPoints.Count == 0)
+            {
+                return;
+            }
+
+            Vector3 center = player.transform.position;
+            for (int index = 0; index < spawnPoints.Count; index++)
+            {
+                SpawnPoint point = spawnPoints[index];
+                if (point == null || point.IsOccupied)
+                {
+                    continue;
+                }
+
+                float angle = index * Mathf.PI * 2f / spawnPoints.Count;
+                float radius = 7f + index % 4 * 1.8f;
+                point.transform.position = center + new Vector3(
+                    Mathf.Cos(angle) * radius,
+                    Mathf.Sin(angle) * radius,
+                    0f);
+            }
+        }
+
+        private void RecycleDistantPickups()
+        {
+            if (player == null || currentMapData == null)
+            {
+                return;
+            }
+
+            float maxDistance = Mathf.Max(currentMapData.worldSize.x, currentMapData.worldSize.y) * 1.75f;
+            float maxDistanceSquared = maxDistance * maxDistance;
+            List<WorldPickup> distant = new List<WorldPickup>();
+            foreach (WorldPickup pickup in activePickups)
+            {
+                if (pickup == null ||
+                    (navigationGuide != null && navigationGuide.Target == pickup))
+                {
+                    continue;
+                }
+
+                if ((pickup.transform.position - player.transform.position).sqrMagnitude >
+                    maxDistanceSquared)
+                {
+                    distant.Add(pickup);
+                }
+            }
+
+            foreach (WorldPickup pickup in distant)
+            {
+                activePickups.Remove(pickup);
+                Destroy(pickup.gameObject);
+            }
+        }
+
+        private void DisableMapBoundaries(GameObject map)
+        {
+            if (map == null)
+            {
+                return;
+            }
+
+            foreach (Collider2D collider in map.GetComponentsInChildren<Collider2D>(true))
+            {
+                if (collider != null && collider.name.StartsWith("Boundary"))
+                {
+                    collider.enabled = false;
+                }
+            }
+        }
+
+        private void ApplyEnvironmentVisuals()
+        {
+            if (worldCamera == null || currentMapData == null || game == null)
+            {
+                return;
+            }
+
+            Color timeTint;
+            switch (game.CurrentTimeOfDay)
+            {
+                case TimeOfDay.Morning:
+                    timeTint = new Color(1f, 0.88f, 0.72f);
+                    break;
+                case TimeOfDay.Evening:
+                    timeTint = new Color(0.88f, 0.62f, 0.5f);
+                    break;
+                case TimeOfDay.Night:
+                    timeTint = new Color(0.35f, 0.42f, 0.68f);
+                    break;
+                default:
+                    timeTint = Color.white;
+                    break;
+            }
+
+            Color weatherTint = game.CurrentWeather == WeatherType.Fog
+                ? new Color(0.72f, 0.76f, 0.78f)
+                : game.CurrentWeather == WeatherType.Rain
+                    ? new Color(0.62f, 0.72f, 0.82f)
+                    : game.CurrentWeather == WeatherType.MeteorShower
+                        ? new Color(0.65f, 0.5f, 0.86f)
+                        : Color.white;
+            Color baseColor = currentMapData.backgroundColor * currentMapData.lightingColor;
+            worldCamera.backgroundColor = baseColor * timeTint * weatherTint;
+            worldCamera.backgroundColor = new Color(
+                worldCamera.backgroundColor.r,
+                worldCamera.backgroundColor.g,
+                worldCamera.backgroundColor.b,
+                1f);
+            RenderSettings.ambientLight = currentMapData.lightingColor * timeTint * weatherTint;
         }
 
         private static WorldPickupType RollPickupType()
@@ -393,9 +722,14 @@ namespace Monstrology
                 return WorldPickupType.Item;
             }
 
-            if (roll < 0.92f)
+            if (roll < 0.90f)
             {
                 return WorldPickupType.Egg;
+            }
+
+            if (roll < 0.97f)
+            {
+                return WorldPickupType.Accessory;
             }
 
             return WorldPickupType.Nothing;

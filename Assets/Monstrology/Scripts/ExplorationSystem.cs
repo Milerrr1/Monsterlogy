@@ -10,7 +10,8 @@ namespace Monstrology
         Track,
         Item,
         Egg,
-        Nothing
+        Nothing,
+        Accessory
     }
 
     public class ExplorationResult
@@ -21,6 +22,7 @@ namespace Monstrology
         public Sprite icon;
         public Color accentColor;
         public CreatureData creature;
+        public AccessoryData accessory;
         public bool firstSpeciesDiscovery;
     }
 
@@ -28,32 +30,23 @@ namespace Monstrology
     {
         public event Action<ExplorationResult> ExplorationCompleted;
 
-        [SerializeField, Min(1)] private int energyCost = 1;
-
         private GameManager game;
+        private AccessoryInventoryManager accessoryInventory;
 
-        public void Initialize(GameManager gameManager)
+        public void Initialize(
+            GameManager gameManager,
+            AccessoryInventoryManager accessoryInventoryManager = null)
         {
             game = gameManager;
+            accessoryInventory = accessoryInventoryManager;
         }
 
         public void Explore()
         {
-            if (game == null || game.CurrentBiome == null)
+            WorldExplorationManager world = FindObjectOfType<WorldExplorationManager>();
+            if (world != null)
             {
-                return;
-            }
-
-            if (!game.SpendEnergy(energyCost))
-            {
-                return;
-            }
-
-            game.RegisterExploration();
-            ExplorationResult result = RollResult();
-            if (ExplorationCompleted != null)
-            {
-                ExplorationCompleted(result);
+                world.StartQuickSearch();
             }
         }
 
@@ -61,7 +54,8 @@ namespace Monstrology
             ExplorationResultType type,
             CreatureData creature = null,
             ItemData item = null,
-            TrackType? track = null)
+            TrackType? track = null,
+            AccessoryData accessory = null)
         {
             if (game == null || game.CurrentBiome == null)
             {
@@ -83,6 +77,11 @@ namespace Monstrology
                     break;
                 case ExplorationResultType.Egg:
                     result = item != null ? ResolveItem(item, true) : ResolveTrack(SelectTrack());
+                    break;
+                case ExplorationResultType.Accessory:
+                    result = accessory != null
+                        ? ResolveAccessory(accessory)
+                        : ResolveTrack(SelectTrack());
                     break;
                 default:
                     result = CreateNothingResult();
@@ -165,7 +164,49 @@ namespace Monstrology
 
         public TrackType SelectTrack()
         {
-            return (TrackType)UnityEngine.Random.Range(0, Enum.GetValues(typeof(TrackType)).Length);
+            return (TrackType)UnityEngine.Random.Range(0, (int)TrackType.Lair);
+        }
+
+        public AccessoryData SelectAccessory()
+        {
+            if (game == null || game.Content.accessories == null || game.Content.accessories.Count == 0)
+            {
+                return null;
+            }
+
+            float totalWeight = 0f;
+            List<AccessoryData> candidates = new List<AccessoryData>();
+            List<float> weights = new List<float>();
+            foreach (AccessoryData accessory in game.Content.accessories)
+            {
+                if (accessory == null || string.IsNullOrEmpty(accessory.id))
+                {
+                    continue;
+                }
+
+                float rarityFactor = 1f / (1f + (int)accessory.rarity * 0.65f);
+                float weight = Mathf.Max(0.001f, accessory.dropChance) * rarityFactor;
+                candidates.Add(accessory);
+                weights.Add(weight);
+                totalWeight += weight;
+            }
+
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            float roll = UnityEngine.Random.value * totalWeight;
+            for (int index = 0; index < candidates.Count; index++)
+            {
+                roll -= weights[index];
+                if (roll <= 0f)
+                {
+                    return candidates[index];
+                }
+            }
+
+            return candidates[candidates.Count - 1];
         }
 
         private ExplorationResult RollResult()
@@ -186,9 +227,15 @@ namespace Monstrology
                 return FindItem(false);
             }
 
-            if (roll < 0.92f)
+            if (roll < 0.90f)
             {
                 return FindItem(true);
+            }
+
+            if (roll < 0.97f)
+            {
+                AccessoryData accessory = SelectAccessory();
+                return accessory != null ? ResolveAccessory(accessory) : CreateNothingResult();
             }
 
             return CreateNothingResult();
@@ -280,6 +327,30 @@ namespace Monstrology
             };
         }
 
+        private ExplorationResult ResolveAccessory(AccessoryData selected)
+        {
+            if (accessoryInventory == null || !accessoryInventory.AddAccessory(selected))
+            {
+                return CreateNothingResult();
+            }
+
+            if (game != null)
+            {
+                game.RaiseNotification("Найден предмет гардероба: " + selected.displayName);
+            }
+
+            return new ExplorationResult
+            {
+                type = ExplorationResultType.Accessory,
+                title = "Новая одежда",
+                description = selected.displayName + "\n" + selected.description +
+                              "\nГардероб  |  Редкость: " + PetLocalization.Rarity(selected.rarity),
+                icon = selected.icon,
+                accentColor = PetLocalization.RarityColor(selected.rarity),
+                accessory = selected
+            };
+        }
+
         private static ExplorationResult CreateNothingResult()
         {
             return new ExplorationResult
@@ -352,6 +423,7 @@ namespace Monstrology
                 case TrackType.EggShell: return "Осколок яичной скорлупы";
                 case TrackType.StrangeSound: return "Запись странного звука";
                 case TrackType.ShinyStone: return "Блестящий камень";
+                case TrackType.Lair: return "Обнаруженное логово";
                 default: return "Цепочка маленьких лап";
             }
         }

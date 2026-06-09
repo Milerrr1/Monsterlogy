@@ -10,11 +10,15 @@ namespace Monstrology
     {
         private GameManager game;
         private ExplorationSystem exploration;
-        private MutationSystem mutations;
         private QuestSystem quests;
         private PlayerController2D player;
         private InteractionSystem interaction;
         private CreatureCollectionManager petCollection;
+        private AccessoryInventoryManager accessoryInventory;
+        private BreedingSystem breeding;
+        private PetUpgradeSystem upgrades;
+        private WorldExplorationManager world;
+        private AchievementSystem achievements;
 
         private Image background;
         private Text biomeText;
@@ -28,36 +32,108 @@ namespace Monstrology
 
         private GameObject encyclopediaPanel;
         private GameObject biomePanel;
-        private GameObject mutationPanel;
         private GameObject questPanel;
         private GameObject petsPanel;
+        private GameObject accessoryPanel;
+        private GameObject breedingPanel;
+        private GameObject achievementPanel;
 
         private EncyclopediaUI encyclopediaUI;
         private BiomeUI biomeUI;
         private PetsPanel petsUI;
+        private WardrobePanel wardrobeUI;
+        private BreedingPanel breedingUI;
+        private AchievementPanel achievementUI;
         private PetAdoptionDialog adoptionDialog;
 
-        private Dropdown creatureDropdown;
-        private Dropdown itemDropdown;
-        private Text mutationMessage;
         private Transform questContent;
 
         public void Initialize(
             GameManager gameManager,
             ExplorationSystem explorationSystem,
-            MutationSystem mutationSystem,
             QuestSystem questSystem,
             PlayerController2D playerController,
             InteractionSystem interactionSystem,
             CreatureCollectionManager collectionManager)
         {
+            AccessoryInventoryManager inventoryManager = FindObjectOfType<AccessoryInventoryManager>();
+            if (inventoryManager == null)
+            {
+                inventoryManager = gameObject.AddComponent<AccessoryInventoryManager>();
+                inventoryManager.Initialize(gameManager, collectionManager);
+            }
+
+            BreedingSystem breedingSystem = FindObjectOfType<BreedingSystem>();
+            if (breedingSystem == null)
+            {
+                breedingSystem = gameObject.AddComponent<BreedingSystem>();
+                breedingSystem.Initialize(gameManager, collectionManager);
+            }
+
+            PetUpgradeSystem upgradeSystem = FindObjectOfType<PetUpgradeSystem>();
+            if (upgradeSystem == null)
+            {
+                upgradeSystem = gameObject.AddComponent<PetUpgradeSystem>();
+                upgradeSystem.Initialize(gameManager, collectionManager);
+            }
+
+            Initialize(
+                gameManager,
+                explorationSystem,
+                questSystem,
+                playerController,
+                interactionSystem,
+                collectionManager,
+                inventoryManager,
+                breedingSystem,
+                upgradeSystem);
+        }
+
+        public void Initialize(
+            GameManager gameManager,
+            ExplorationSystem explorationSystem,
+            QuestSystem questSystem,
+            PlayerController2D playerController,
+            InteractionSystem interactionSystem,
+            CreatureCollectionManager collectionManager,
+            AccessoryInventoryManager inventoryManager,
+            BreedingSystem breedingSystem,
+            PetUpgradeSystem upgradeSystem)
+        {
+            if (inventoryManager == null)
+            {
+                inventoryManager = gameObject.AddComponent<AccessoryInventoryManager>();
+                inventoryManager.Initialize(gameManager, collectionManager);
+            }
+
+            if (breedingSystem == null)
+            {
+                breedingSystem = gameObject.AddComponent<BreedingSystem>();
+                breedingSystem.Initialize(gameManager, collectionManager);
+            }
+
+            if (upgradeSystem == null)
+            {
+                upgradeSystem = gameObject.AddComponent<PetUpgradeSystem>();
+                upgradeSystem.Initialize(gameManager, collectionManager);
+            }
+
             game = gameManager;
             exploration = explorationSystem;
-            mutations = mutationSystem;
             quests = questSystem;
             player = playerController;
             interaction = interactionSystem;
             petCollection = collectionManager;
+            accessoryInventory = inventoryManager;
+            breeding = breedingSystem;
+            upgrades = upgradeSystem;
+            world = FindObjectOfType<WorldExplorationManager>();
+            achievements = FindObjectOfType<AchievementSystem>();
+            if (achievements == null)
+            {
+                achievements = gameObject.AddComponent<AchievementSystem>();
+                achievements.Initialize(gameManager, collectionManager, breedingSystem);
+            }
 
             EnsureEventSystem();
             BuildCanvas();
@@ -168,10 +244,10 @@ namespace Monstrology
                 new Vector2(126f, 14f), new Vector2(-16f, -54f));
             resultDescription.color = new Color(0.88f, 0.91f, 0.96f);
 
-            Button exploreButton = UIFactory.Button("ExploreFallback", parent, "Быстрый поиск  -1",
+            Button exploreButton = UIFactory.Button("ExploreFallback", parent, "КОМПАС ИССЛЕДОВАТЕЛЯ",
                 new Color(0.93f, 0.43f, 0.23f, 0.94f));
             UIFactory.SetRect(exploreButton.GetComponent<RectTransform>(), new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(0f, 1f), new Vector2(18f, -244f), new Vector2(180f, 42f));
+                new Vector2(0f, 1f), new Vector2(18f, -244f), new Vector2(220f, 42f));
             exploreButton.onClick.AddListener(OnExploreButton);
 
             tracksText = UIFactory.Text("Tracks", parent, "", 13, FontStyle.Normal, TextAnchor.MiddleCenter);
@@ -192,7 +268,7 @@ namespace Monstrology
                 new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 58f));
 
             HorizontalLayoutGroup layout = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(125, 125, 7, 7);
+            layout.padding = new RectOffset(20, 20, 7, 7);
             layout.spacing = 10f;
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.childControlHeight = true;
@@ -203,7 +279,9 @@ namespace Monstrology
             AddNavigationButton(bar.transform, "БИОМЫ", OpenBiomes);
             AddNavigationButton(bar.transform, "ЭНЦИКЛОПЕДИЯ", OpenEncyclopedia);
             AddNavigationButton(bar.transform, "ПИТОМЦЫ", OpenPets);
-            AddNavigationButton(bar.transform, "МУТАЦИИ", OpenMutations);
+            AddNavigationButton(bar.transform, "ГАРДЕРОБ", OpenWardrobe);
+            AddNavigationButton(bar.transform, "ЭВОЛЮЦИЯ", OpenBreeding);
+            AddNavigationButton(bar.transform, "ДОСТИЖЕНИЯ", OpenAchievements);
             AddNavigationButton(bar.transform, "КВЕСТЫ", OpenQuests);
         }
 
@@ -258,15 +336,33 @@ namespace Monstrology
             biomeUI = gameObject.AddComponent<BiomeUI>();
             biomeUI.Initialize(game, UIFactory.FindContent(biomePanel), CloseAllPanels);
 
-            mutationPanel = CreateModal(parent, "ЛАБОРАТОРИЯ МУТАЦИЙ");
-            BuildMutationPanel(UIFactory.FindContent(mutationPanel));
-
             questPanel = CreateModal(parent, "КВЕСТЫ И НАГРАДЫ");
             questContent = UIFactory.FindContent(questPanel);
 
             petsPanel = CreateModal(parent, "МОИ ПИТОМЦЫ");
             petsUI = gameObject.AddComponent<PetsPanel>();
-            petsUI.Initialize(game, petCollection, UIFactory.FindContent(petsPanel));
+            petsUI.Initialize(
+                game,
+                petCollection,
+                UIFactory.FindContent(petsPanel),
+                accessoryInventory,
+                upgrades);
+
+            accessoryPanel = CreateModal(parent, "ГАРДЕРОБ");
+            wardrobeUI = gameObject.AddComponent<WardrobePanel>();
+            wardrobeUI.Initialize(
+                game,
+                petCollection,
+                accessoryInventory,
+                UIFactory.FindContent(accessoryPanel));
+
+            breedingPanel = CreateModal(parent, "ЭВОЛЮЦИЯ ВИДОВ");
+            breedingUI = gameObject.AddComponent<BreedingPanel>();
+            breedingUI.Initialize(game, petCollection, breeding, UIFactory.FindContent(breedingPanel));
+
+            achievementPanel = CreateModal(parent, "ДОСТИЖЕНИЯ");
+            achievementUI = gameObject.AddComponent<AchievementPanel>();
+            achievementUI.Initialize(achievements, UIFactory.FindContent(achievementPanel));
 
             BuildAdoptionDialog(parent);
         }
@@ -373,61 +469,12 @@ namespace Monstrology
             return overlay;
         }
 
-        private void BuildMutationPanel(Transform content)
-        {
-            VerticalLayoutGroup layout = content.gameObject.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(120, 120, 30, 30);
-            layout.spacing = 14f;
-            layout.childControlWidth = true;
-            layout.childControlHeight = false;
-            layout.childForceExpandWidth = true;
-
-            UIFactory.Label(content, "Выберите найденное существо и предмет-катализатор.", 18, 38f);
-            creatureDropdown = UIFactory.Dropdown("CreatureDropdown", content);
-            UIFactory.SetLayoutHeight(creatureDropdown.gameObject, 48f);
-            itemDropdown = UIFactory.Dropdown("ItemDropdown", content);
-            UIFactory.SetLayoutHeight(itemDropdown.gameObject, 48f);
-
-            Button mutate = UIFactory.Button("Mutate", content, "МУТИРОВАТЬ", new Color(0.63f, 0.3f, 0.82f));
-            UIFactory.SetLayoutHeight(mutate.gameObject, 58f);
-            mutate.onClick.AddListener(PerformMutation);
-
-            mutationMessage = UIFactory.Label(content,
-                "Подсказка: некоторые формы открываются только в лаборатории.", 18, 74f);
-            mutationMessage.alignment = TextAnchor.MiddleCenter;
-            mutationMessage.color = new Color(0.9f, 0.86f, 0.98f);
-        }
-
-        private void RebuildMutationOptions()
-        {
-            creatureDropdown.ClearOptions();
-            itemDropdown.ClearOptions();
-
-            List<string> creatureNames = new List<string>();
-            foreach (CreatureData creature in game.Content.creatures)
-            {
-                if (game.IsCreatureFound(creature.id))
-                {
-                    creatureNames.Add(creature.creatureName);
-                }
-            }
-
-            List<string> itemNames = new List<string>();
-            foreach (ItemData item in game.Content.items)
-            {
-                if (game.GetItemCount(item.id) > 0)
-                {
-                    itemNames.Add(item.itemName + "  x" + game.GetItemCount(item.id));
-                }
-            }
-
-            creatureDropdown.AddOptions(creatureNames.Count > 0 ? creatureNames : new List<string> { "Нет найденных существ" });
-            itemDropdown.AddOptions(itemNames.Count > 0 ? itemNames : new List<string> { "Нет предметов" });
-        }
-
         public void OnExploreButton()
         {
-            exploration.Explore();
+            if (world != null)
+            {
+                world.StartQuickSearch();
+            }
         }
 
         public void OpenBiomes()
@@ -442,12 +489,6 @@ namespace Monstrology
             encyclopediaUI.Rebuild();
         }
 
-        public void OpenMutations()
-        {
-            OpenPanel(mutationPanel);
-            RebuildMutationOptions();
-        }
-
         public void OpenQuests()
         {
             OpenPanel(questPanel);
@@ -460,25 +501,27 @@ namespace Monstrology
             petsUI.Rebuild();
         }
 
-        public void PerformMutation()
+        public void OpenWardrobe()
         {
-            List<CreatureData> creatures = game.Content.creatures.FindAll(creature => game.IsCreatureFound(creature.id));
-            List<ItemData> items = game.Content.items.FindAll(item => game.GetItemCount(item.id) > 0);
-            if (creatures.Count == 0 || items.Count == 0)
-            {
-                mutationMessage.text = "Для опыта нужны найденное существо и предмет.";
-                return;
-            }
+            OpenPanel(accessoryPanel);
+            wardrobeUI.Rebuild();
+        }
 
-            int creatureIndex = Mathf.Clamp(creatureDropdown.value, 0, creatures.Count - 1);
-            int itemIndex = Mathf.Clamp(itemDropdown.value, 0, items.Count - 1);
-            string message;
-            bool success = mutations.TryMutate(creatures[creatureIndex].id, items[itemIndex].id, out message);
-            mutationMessage.text = message;
-            mutationMessage.color = success
-                ? new Color(0.48f, 0.95f, 0.62f)
-                : new Color(1f, 0.67f, 0.48f);
-            RebuildMutationOptions();
+        public void OpenAccessories()
+        {
+            OpenWardrobe();
+        }
+
+        public void OpenBreeding()
+        {
+            OpenPanel(breedingPanel);
+            breedingUI.Rebuild();
+        }
+
+        public void OpenAchievements()
+        {
+            OpenPanel(achievementPanel);
+            achievementUI.Rebuild();
         }
 
         private void RebuildQuests()
@@ -546,7 +589,9 @@ namespace Monstrology
                 return;
             }
 
-            biomeText.text = game.CurrentBiome.biomeName;
+            biomeText.text = game.CurrentBiome.biomeName + "  |  " +
+                             WorldEnvironmentSystem.Localize(game.CurrentTimeOfDay) + "  |  " +
+                             WorldEnvironmentSystem.Localize(game.CurrentWeather);
             coinsText.text = "МОНЕТЫ  " + game.Coins;
             energyText.text = "ЭНЕРГИЯ  " + game.Energy;
             tracksText.text = game.GetTrackSummary();
@@ -621,9 +666,11 @@ namespace Monstrology
         {
             encyclopediaPanel.SetActive(false);
             biomePanel.SetActive(false);
-            mutationPanel.SetActive(false);
             questPanel.SetActive(false);
             petsPanel.SetActive(false);
+            accessoryPanel.SetActive(false);
+            breedingPanel.SetActive(false);
+            achievementPanel.SetActive(false);
             SetWorldInputEnabled(true);
         }
 

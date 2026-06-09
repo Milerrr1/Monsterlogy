@@ -22,10 +22,15 @@
 Monstrology
 ├── GameManager
 ├── ExplorationSystem
-├── MutationSystem
+├── PetUpgradeSystem
+├── BreedingSystem
+├── WorldEnvironmentSystem
+├── AchievementSystem
 ├── QuestSystem
 ├── YandexGamesBridge
 ├── UIManager
+├── InfiniteBiomeMap
+├── TrackChainSystem
 └── MonstrologyCanvas
     ├── BiomeBackground
     ├── TopBar
@@ -35,7 +40,9 @@ Monstrology
     ├── BottomBar
     ├── Энциклопедия
     ├── Карта биомов
-    ├── Лаборатория мутаций
+    ├── Питомцы / Гардероб
+    ├── Эволюция видов
+    ├── Достижения
     └── Квесты
 ```
 
@@ -48,12 +55,14 @@ reference resolution `960 x 540`, match `0.5`.
 
 | Кнопка | Метод |
 |---|---|
-| Исследовать | `UIManager.OnExploreButton()` |
+| Компас исследователя | `UIManager.OnExploreButton()` |
 | Биомы | `UIManager.OpenBiomes()` |
 | Энциклопедия | `UIManager.OpenEncyclopedia()` |
-| Мутации | `UIManager.OpenMutations()` |
+| Питомцы | `UIManager.OpenPets()` |
+| Гардероб | `UIManager.OpenWardrobe()` |
+| Эволюция | `UIManager.OpenBreeding()` |
+| Достижения | `UIManager.OpenAchievements()` |
 | Квесты | `UIManager.OpenQuests()` |
-| Мутировать | `UIManager.PerformMutation()` |
 | Закрыть окно | `UIManager.CloseAllPanels()` |
 | Энергия за рекламу | `UIManager.ShowRewardedEnergy()` |
 
@@ -73,7 +82,7 @@ reference resolution `960 x 540`, match `0.5`.
    - `Create > Monstrology > Quest`
 4. Заполните списки `Authored Content` у bootstrap.
 5. В каждом `BiomeData` заполните `Available Creatures`.
-6. В `Mutation Recipes` укажите ID базового существа, предмета и результата.
+6. В `Species Evolutions` укажите базовый вид, число копий и следующую форму.
 
 ID должны быть уникальными, стабильными и состоять из латиницы, цифр и подчёркиваний.
 Сохранение использует ID, поэтому переименование отображаемого имени безопасно, а изменение ID
@@ -87,6 +96,8 @@ ID должны быть уникальными, стабильными и со�
 - `Element`, `Biome`.
 - `Appearance Chance`: относительный вес внутри биома.
 - `Appearance Conditions`: список условий; все условия списка должны выполниться.
+- `Allowed Times`: допустимые части суток; пустой список разрешает любое время.
+- `Allowed Weather`: допустимая погода; пустой список разрешает любую погоду.
 - `Found`: только предпросмотр в Inspector. Реальный прогресс хранит `GameManager`.
 
 Доступные условия:
@@ -103,7 +114,7 @@ ID должны быть уникальными, стабильными и со�
 
 ### ItemData
 
-Заполните ID, имя, описание, тип, иконку и предпочтительный биом. Предпочтительный биом
+Заполните ID, имя, описание, тип, иконку, `Required Species Id` и предпочтительный биом. Предпочтительный биом
 даёт предмету повышенную вероятность при исследовании этой локации.
 
 ### QuestData
@@ -113,9 +124,10 @@ ID должны быть уникальными, стабильными и со�
 
 ## Сохранение
 
-`SaveSystem` хранит JSON в `PlayerPrefs` под ключом `Monstrology.Progress.v1`.
-Сохраняются монеты, энергия, биом, исследования, мутации, существа, предметы, следы,
-квесты и купленные подсказки.
+`SaveSystem` хранит JSON в `PlayerPrefs` под прежним ключом `Monstrology.Progress.v1`.
+Формат версии 5 автоматически дополняет старые сохранения. Сохраняются монеты, энергия, биом,
+исследования, открытые виды, копии, питомцы, уровни, предметы, гардероб, следы, время суток,
+погода, достижения, квесты и купленные подсказки.
 
 Для сброса во время разработки вызовите `GameManager.ResetProgress()` или удалите PlayerPrefs.
 
@@ -139,9 +151,13 @@ ID должны быть уникальными, стабильными и со�
 ## Основные файлы
 
 - `GameManager.cs`: состояние, экономика, условия и прогресс.
-- `ExplorationSystem.cs`: таблица результатов и выбор существ.
+- `ExplorationSystem.cs`: выдача награды после взаимодействия с находкой.
+- `WorldExplorationManager.cs`, `InfiniteBiomeMap.cs`, `TileRepeater.cs`: мир, компас и пул фоновых тайлов.
+- `TrackChainSystem.cs`: последовательности следов, ведущие к редкому существу.
+- `WorldEnvironmentSystem.cs`: ускоренное время суток и автоматическая погода.
+- `AchievementSystem.cs`: проверка и сохранение достижений.
 - `SaveSystem.cs`: сериализация PlayerPrefs.
 - `EncyclopediaUI.cs`, `BiomeUI.cs`, `UIManager.cs`: интерфейс.
-- `MutationSystem.cs`, `QuestSystem.cs`: мутации и квесты.
+- `PetUpgradeSystem.cs`, `BreedingSystem.cs`, `QuestSystem.cs`: уровни, эволюция и квесты.
 - `MonstrologyBootstrap.cs`: самозапуск и демо-контент.
 - `YandexGamesBridge.cs`: точка интеграции Яндекс Игр.

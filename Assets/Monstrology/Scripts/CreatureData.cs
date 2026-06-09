@@ -34,6 +34,22 @@ namespace Monstrology
         ExplorationCount
     }
 
+    public enum TimeOfDay
+    {
+        Morning,
+        Day,
+        Evening,
+        Night
+    }
+
+    public enum WeatherType
+    {
+        Sunny,
+        Rain,
+        Fog,
+        MeteorShower
+    }
+
     [Serializable]
     public class AppearanceCondition
     {
@@ -76,6 +92,10 @@ namespace Monstrology
         public Sprite icon;
         [Min(0.01f)] public float appearanceChance = 1f;
         public List<AppearanceCondition> appearanceConditions = new List<AppearanceCondition>();
+        [Tooltip("Empty means the creature can appear at any time.")]
+        public List<TimeOfDay> allowedTimes = new List<TimeOfDay>();
+        [Tooltip("Empty means the creature can appear in any weather.")]
+        public List<WeatherType> allowedWeather = new List<WeatherType>();
 
         [Header("Editor preview only")]
         [Tooltip("Runtime progress is stored by GameManager. This flag is convenient only for authoring previews.")]

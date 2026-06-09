@@ -7,7 +7,8 @@ namespace Monstrology
         Material,
         MutationCatalyst,
         Egg,
-        Hint
+        Hint,
+        UpgradeResource
     }
 
     [CreateAssetMenu(fileName = "Item", menuName = "Monstrology/Item")]
@@ -19,5 +20,7 @@ namespace Monstrology
         public ItemKind kind;
         public Sprite icon;
         public BiomeType preferredBiome;
+        [Tooltip("Species upgraded by this resource. Empty for non-upgrade items.")]
+        public string requiredSpeciesId;
     }
 }

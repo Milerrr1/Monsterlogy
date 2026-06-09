@@ -26,9 +26,9 @@ namespace Monstrology
     }
 
     [Serializable]
-    public class AccessorySlot
+    public class EquippedAccessory
     {
-        public string slotId;
+        public AccessorySlot slot;
         public string equippedAccessoryId;
     }
 
@@ -49,6 +49,8 @@ namespace Monstrology
     {
         public string uniqueId;
         public string speciesId;
+        public string evolutionRootSpeciesId;
+        [Min(0)] public int evolutionStage;
         public string customName;
         [Min(1)] public int level = 1;
         [Min(0)] public int experience;
@@ -56,11 +58,20 @@ namespace Monstrology
         [Min(0)] public int ageInDays;
         public bool isFavorite;
         public string obtainedDate;
-        public List<AccessorySlot> accessorySlots = new List<AccessorySlot>();
+        [Tooltip("Legacy save field. New code uses equippedAccessories.")]
+        public List<EquippedAccessory> accessorySlots = new List<EquippedAccessory>();
         public PersonalityType personalityType;
 
         public CreatureBreedingData breedingData = new CreatureBreedingData();
         public CreatureGeneticsData geneticsData = new CreatureGeneticsData();
+
+        public CreatureGenetics genetics = new CreatureGenetics();
+        public List<EquippedAccessory> equippedAccessories = new List<EquippedAccessory>();
+        public string breedingCooldownEndTime;
+        public List<string> parentsIds = new List<string>();
+        [Min(0)] public int generation;
+        public bool isWildCaught = true;
+        [Min(0)] public int totalBreedCount;
 
         public string GetDisplayName(CreatureData species)
         {

@@ -9,7 +9,8 @@ namespace Monstrology
         Trace,
         Item,
         Egg,
-        Nothing
+        Nothing,
+        Accessory
     }
 
     [RequireComponent(typeof(Collider2D))]
@@ -21,6 +22,7 @@ namespace Monstrology
         [SerializeField] private CreatureData creature;
         [SerializeField] private ItemData item;
         [SerializeField] private TrackType trackType;
+        [SerializeField] private AccessoryData accessory;
         [SerializeField] private SpriteRenderer visual;
 
         private ExplorationSystem exploration;
@@ -28,12 +30,16 @@ namespace Monstrology
         private SpawnPoint spawnPoint;
         private bool collected;
         private Vector3 baseScale;
+        private int trackChainStage = -1;
 
         public static IEnumerable<WorldPickup> ActivePickups { get { return Active; } }
         public WorldPickupType PickupType { get { return pickupType; } }
         public CreatureData Creature { get { return creature; } }
         public ItemData Item { get { return item; } }
+        public AccessoryData Accessory { get { return accessory; } }
         public bool CanInteract { get { return isActiveAndEnabled && !collected; } }
+        public TrackType TrackType { get { return trackType; } }
+        public int TrackChainStage { get { return trackChainStage; } }
 
         public string DisplayName
         {
@@ -44,11 +50,13 @@ namespace Monstrology
                     case WorldPickupType.Creature:
                         return creature != null ? creature.creatureName : "неизвестное существо";
                     case WorldPickupType.Trace:
-                        return "изучить след";
+                        return Localization.Track(trackType);
                     case WorldPickupType.Item:
                         return item != null ? item.itemName : "подобрать предмет";
                     case WorldPickupType.Egg:
                         return item != null ? item.itemName : "осмотреть яйцо";
+                    case WorldPickupType.Accessory:
+                        return accessory != null ? accessory.displayName : "подобрать одежду";
                     default:
                         return "проверить место";
                 }
@@ -100,15 +108,19 @@ namespace Monstrology
             TrackType traceType,
             ExplorationSystem explorationSystem,
             WorldExplorationManager manager,
-            SpawnPoint point)
+            SpawnPoint point,
+            AccessoryData accessoryData = null,
+            int chainStage = -1)
         {
             pickupType = type;
             creature = creatureData;
             item = itemData;
             trackType = traceType;
+            accessory = accessoryData;
             exploration = explorationSystem;
             owner = manager;
             spawnPoint = point;
+            trackChainStage = chainStage;
 
             if (spawnPoint != null)
             {
@@ -126,8 +138,13 @@ namespace Monstrology
             }
 
             collected = true;
+            if (pickupType == WorldPickupType.Trace && owner != null)
+            {
+                owner.AdvanceTrackChain(this);
+            }
+
             ExplorationResultType resultType = ConvertType(pickupType);
-            exploration.ResolveWorldDiscovery(resultType, creature, item, trackType);
+            exploration.ResolveWorldDiscovery(resultType, creature, item, trackType, accessory);
 
             if (owner != null)
             {
@@ -163,6 +180,11 @@ namespace Monstrology
                 return item.icon;
             }
 
+            if (pickupType == WorldPickupType.Accessory && accessory != null && accessory.icon != null)
+            {
+                return accessory.icon;
+            }
+
             switch (pickupType)
             {
                 case WorldPickupType.Creature:
@@ -171,6 +193,8 @@ namespace Monstrology
                     return WorldPlaceholderSprites.Diamond;
                 case WorldPickupType.Egg:
                     return WorldPlaceholderSprites.Egg;
+                case WorldPickupType.Accessory:
+                    return WorldPlaceholderSprites.Square;
                 case WorldPickupType.Nothing:
                     return WorldPlaceholderSprites.Ring;
                 default:
@@ -196,6 +220,12 @@ namespace Monstrology
                     return item != null && item.icon != null
                         ? Color.white
                         : new Color(0.82f, 0.66f, 1f);
+                case WorldPickupType.Accessory:
+                    return accessory != null && accessory.icon != null
+                        ? Color.white
+                        : accessory != null
+                            ? PetLocalization.RarityColor(accessory.rarity)
+                            : new Color(0.96f, 0.72f, 0.3f);
                 default:
                     return new Color(0.72f, 0.76f, 0.84f);
             }
@@ -213,6 +243,8 @@ namespace Monstrology
                     return ExplorationResultType.Item;
                 case WorldPickupType.Egg:
                     return ExplorationResultType.Egg;
+                case WorldPickupType.Accessory:
+                    return ExplorationResultType.Accessory;
                 default:
                     return ExplorationResultType.Nothing;
             }

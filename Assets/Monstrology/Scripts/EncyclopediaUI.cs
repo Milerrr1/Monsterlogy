@@ -76,9 +76,7 @@ namespace Monstrology
             {
                 if (game.IsHintPurchased(creature.id))
                 {
-                    string hint = creature.appearanceConditions.Count > 0
-                        ? creature.appearanceConditions[0].GetHint()
-                        : "Ищите в биоме: " + Localization.Biome(creature.biome);
+                    string hint = BuildAppearanceHint(creature);
                     details = "Силуэт не опознан.\n\nПодсказка: " + hint;
                 }
                 else
@@ -108,6 +106,27 @@ namespace Monstrology
                     }
                 });
             }
+        }
+
+        private static string BuildAppearanceHint(CreatureData creature)
+        {
+            if (creature.allowedTimes != null && creature.allowedTimes.Count > 0)
+            {
+                return "Время появления: " +
+                       string.Join(", ", creature.allowedTimes.ConvertAll(
+                           WorldEnvironmentSystem.Localize));
+            }
+
+            if (creature.allowedWeather != null && creature.allowedWeather.Count > 0)
+            {
+                return "Погода: " +
+                       string.Join(", ", creature.allowedWeather.ConvertAll(
+                           WorldEnvironmentSystem.Localize));
+            }
+
+            return creature.appearanceConditions.Count > 0
+                ? creature.appearanceConditions[0].GetHint()
+                : "Ищите в биоме: " + Localization.Biome(creature.biome);
         }
     }
 }

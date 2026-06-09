@@ -11,7 +11,8 @@ namespace Monstrology
         Fur,
         EggShell,
         StrangeSound,
-        ShinyStone
+        ShinyStone,
+        Lair
     }
 
     [Serializable]
@@ -20,8 +21,11 @@ namespace Monstrology
         public List<CreatureData> creatures = new List<CreatureData>();
         public List<BiomeData> biomes = new List<BiomeData>();
         public List<ItemData> items = new List<ItemData>();
+        public List<AccessoryData> accessories = new List<AccessoryData>();
         public List<QuestData> quests = new List<QuestData>();
         public List<MutationRecipe> mutationRecipes = new List<MutationRecipe>();
+        public List<BreedingRecipeData> breedingRecipes = new List<BreedingRecipeData>();
+        public List<SpeciesEvolutionData> speciesEvolutions = new List<SpeciesEvolutionData>();
     }
 
     public class GameManager : MonoBehaviour
@@ -43,6 +47,10 @@ namespace Monstrology
         public int ExplorationCount { get { return progress.explorationCount; } }
         public int MutationCount { get { return progress.mutationCount; } }
         public int TotalCreaturesFound { get { return progress.totalCreaturesFound; } }
+        public TimeOfDay CurrentTimeOfDay { get { return ParseTimeOfDay(progress.timeOfDay); } }
+        public WeatherType CurrentWeather { get { return ParseWeather(progress.weather); } }
+        public float WorldTime01 { get { return Mathf.Repeat(progress.worldTime01, 1f); } }
+        public float WeatherTimer { get { return Mathf.Max(0f, progress.weatherTimer); } }
         public BiomeData CurrentBiome { get; private set; }
 
         private GameProgress progress;
@@ -64,11 +72,20 @@ namespace Monstrology
         public void Initialize(GameContent gameContent)
         {
             content = gameContent ?? new GameContent();
+            EnsureContentDefaults();
             progress = SaveSystem.Load();
             EnsureProgressDefaults();
             ReadEntries(progress.creatures, creatureCounts);
             ReadEntries(progress.items, itemCounts);
             ReadEntries(progress.tracks, trackCounts);
+            foreach (KeyValuePair<string, int> entry in creatureCounts)
+            {
+                if (entry.Value > 0 && !progress.discoveredSpecies.Contains(entry.Key))
+                {
+                    progress.discoveredSpecies.Add(entry.Key);
+                }
+            }
+
             CurrentBiome = GetBiome(ParseBiome(progress.currentBiome));
 
             if (CurrentBiome == null && content.biomes.Count > 0)
@@ -126,7 +143,12 @@ namespace Monstrology
                 return false;
             }
 
-            bool firstDiscovery = GetCreatureCount(creature.id) == 0;
+            bool firstDiscovery = !IsCreatureFound(creature.id);
+            if (firstDiscovery)
+            {
+                progress.discoveredSpecies.Add(creature.id);
+            }
+
             creatureCounts[creature.id] = GetCreatureCount(creature.id) + 1;
             progress.totalCreaturesFound++;
             int reward = GetDiscoveryReward(creature.rarity, firstDiscovery);
@@ -149,6 +171,36 @@ namespace Monstrology
 
             itemCounts[itemId] = Mathf.Max(0, GetItemCount(itemId) + amount);
             Save();
+        }
+
+        public void AddCreatureCopies(string creatureId, int amount)
+        {
+            if (string.IsNullOrEmpty(creatureId) || amount <= 0 || GetCreature(creatureId) == null)
+            {
+                return;
+            }
+
+            creatureCounts[creatureId] = GetCreatureCount(creatureId) + amount;
+            if (!progress.discoveredSpecies.Contains(creatureId))
+            {
+                progress.discoveredSpecies.Add(creatureId);
+            }
+
+            progress.totalCreaturesFound += amount;
+            Save();
+        }
+
+        public bool ConsumeCreatureCopies(string creatureId, int amount)
+        {
+            if (string.IsNullOrEmpty(creatureId) || amount <= 0 ||
+                GetCreatureCount(creatureId) < amount)
+            {
+                return false;
+            }
+
+            creatureCounts[creatureId] -= amount;
+            Save();
+            return true;
         }
 
         public bool ConsumeItem(string itemId, int amount = 1)
@@ -201,7 +253,7 @@ namespace Monstrology
 
         public bool IsCreatureFound(string creatureId)
         {
-            return GetCreatureCount(creatureId) > 0;
+            return progress.discoveredSpecies.Contains(creatureId);
         }
 
         public bool IsBiomeUnlocked(BiomeType biomeType)
@@ -268,6 +320,18 @@ namespace Monstrology
                 return false;
             }
 
+            if (creature.allowedTimes != null && creature.allowedTimes.Count > 0 &&
+                !creature.allowedTimes.Contains(CurrentTimeOfDay))
+            {
+                return false;
+            }
+
+            if (creature.allowedWeather != null && creature.allowedWeather.Count > 0 &&
+                !creature.allowedWeather.Contains(CurrentWeather))
+            {
+                return false;
+            }
+
             foreach (AppearanceCondition condition in creature.appearanceConditions)
             {
                 if (!IsConditionMet(condition))
@@ -295,6 +359,17 @@ namespace Monstrology
             return content.items.Find(item => item != null && item.id == id);
         }
 
+        public AccessoryData GetAccessory(string id)
+        {
+            return content.accessories.Find(accessory => accessory != null && accessory.id == id);
+        }
+
+        public SpeciesEvolutionData GetEvolution(string speciesId)
+        {
+            return content.speciesEvolutions.Find(evolution =>
+                evolution != null && evolution.baseSpeciesId == speciesId);
+        }
+
         public BiomeData GetBiome(BiomeType type)
         {
             return content.biomes.Find(biome => biome != null && biome.type == type);
@@ -312,6 +387,57 @@ namespace Monstrology
             progress.pets = pets != null
                 ? new List<CreatureInstance>(pets)
                 : new List<CreatureInstance>();
+            Save();
+        }
+
+        public List<string> GetSavedAccessories()
+        {
+            return progress != null && progress.accessories != null
+                ? new List<string>(progress.accessories)
+                : new List<string>();
+        }
+
+        public void SaveAccessories(IList<string> accessoryIds)
+        {
+            progress.accessories = accessoryIds != null
+                ? new List<string>(accessoryIds)
+                : new List<string>();
+            Save();
+        }
+
+        public IReadOnlyList<string> GetUnlockedAchievements()
+        {
+            return progress.unlockedAchievements.AsReadOnly();
+        }
+
+        public bool IsAchievementUnlocked(string achievementId)
+        {
+            return !string.IsNullOrEmpty(achievementId) &&
+                   progress.unlockedAchievements.Contains(achievementId);
+        }
+
+        public bool UnlockAchievement(string achievementId)
+        {
+            if (string.IsNullOrEmpty(achievementId) || IsAchievementUnlocked(achievementId))
+            {
+                return false;
+            }
+
+            progress.unlockedAchievements.Add(achievementId);
+            Save();
+            return true;
+        }
+
+        public void SaveWorldEnvironment(
+            TimeOfDay timeOfDay,
+            WeatherType weather,
+            float worldTime01,
+            float weatherTimer)
+        {
+            progress.timeOfDay = timeOfDay.ToString();
+            progress.weather = weather.ToString();
+            progress.worldTime01 = Mathf.Repeat(worldTime01, 1f);
+            progress.weatherTimer = Mathf.Max(0f, weatherTimer);
             Save();
         }
 
@@ -378,7 +504,7 @@ namespace Monstrology
                    "  |  Шерсть " + GetTrackCount(TrackType.Fur) +
                    "  |  Скорлупа " + GetTrackCount(TrackType.EggShell) +
                    "  |  Звуки " + GetTrackCount(TrackType.StrangeSound) +
-                   "  |  Камни " + GetTrackCount(TrackType.ShinyStone);
+                   "  |  Логова " + GetTrackCount(TrackType.Lair);
         }
 
         public void ResetProgress()
@@ -433,6 +559,7 @@ namespace Monstrology
             progress.items = WriteEntries(itemCounts);
             progress.tracks = WriteEntries(trackCounts);
             SaveSystem.Save(progress);
+            Debug.Log("Monstrology progress saved.");
             NotifyStateChanged();
 
             if (YandexGamesBridge.Instance != null)
@@ -462,12 +589,35 @@ namespace Monstrology
             }
 
             progress.creatures = progress.creatures ?? new List<StringIntEntry>();
+            progress.discoveredSpecies = progress.discoveredSpecies ?? new List<string>();
             progress.items = progress.items ?? new List<StringIntEntry>();
             progress.tracks = progress.tracks ?? new List<StringIntEntry>();
             progress.claimedQuests = progress.claimedQuests ?? new List<string>();
             progress.purchasedHints = progress.purchasedHints ?? new List<string>();
             progress.pets = progress.pets ?? new List<CreatureInstance>();
-            progress.version = Mathf.Max(progress.version, 2);
+            progress.accessories = progress.accessories ?? new List<string>();
+            progress.unlockedAchievements = progress.unlockedAchievements ?? new List<string>();
+            progress.timeOfDay = string.IsNullOrEmpty(progress.timeOfDay)
+                ? TimeOfDay.Day.ToString()
+                : progress.timeOfDay;
+            progress.weather = string.IsNullOrEmpty(progress.weather)
+                ? WeatherType.Sunny.ToString()
+                : progress.weather;
+            progress.worldTime01 = Mathf.Repeat(progress.worldTime01, 1f);
+            progress.weatherTimer = Mathf.Max(0f, progress.weatherTimer);
+            progress.version = Mathf.Max(progress.version, 5);
+        }
+
+        private void EnsureContentDefaults()
+        {
+            content.creatures = content.creatures ?? new List<CreatureData>();
+            content.biomes = content.biomes ?? new List<BiomeData>();
+            content.items = content.items ?? new List<ItemData>();
+            content.accessories = content.accessories ?? new List<AccessoryData>();
+            content.quests = content.quests ?? new List<QuestData>();
+            content.mutationRecipes = content.mutationRecipes ?? new List<MutationRecipe>();
+            content.breedingRecipes = content.breedingRecipes ?? new List<BreedingRecipeData>();
+            content.speciesEvolutions = content.speciesEvolutions ?? new List<SpeciesEvolutionData>();
         }
 
         private static void ReadEntries(IEnumerable<StringIntEntry> entries, IDictionary<string, int> target)
@@ -496,6 +646,18 @@ namespace Monstrology
         {
             BiomeType result;
             return Enum.TryParse(value, out result) ? result : BiomeType.Forest;
+        }
+
+        private static TimeOfDay ParseTimeOfDay(string value)
+        {
+            TimeOfDay result;
+            return Enum.TryParse(value, out result) ? result : TimeOfDay.Day;
+        }
+
+        private static WeatherType ParseWeather(string value)
+        {
+            WeatherType result;
+            return Enum.TryParse(value, out result) ? result : WeatherType.Sunny;
         }
 
         private static int GetDiscoveryReward(CreatureRarity rarity, bool firstDiscovery)
