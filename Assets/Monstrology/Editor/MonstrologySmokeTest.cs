@@ -1,12 +1,14 @@
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Monstrology.Editor
 {
     public static class MonstrologySmokeTest
     {
         private const string SessionKey = "Monstrology.SmokeTest.Stage";
+        private const string ResultShownAtKey = "Monstrology.SmokeTest.ResultShownAt";
         private static int playFrames;
 
         [InitializeOnLoadMethod]
@@ -50,6 +52,7 @@ namespace Monstrology.Editor
                 {
                     GameManager game = Object.FindObjectOfType<GameManager>();
                     UIManager ui = Object.FindObjectOfType<UIManager>();
+                    ExplorationSystem exploration = Object.FindObjectOfType<ExplorationSystem>();
                     Canvas canvas = Object.FindObjectOfType<Canvas>();
                     PlayerController2D player = Object.FindObjectOfType<PlayerController2D>();
                     WorldExplorationManager world = Object.FindObjectOfType<WorldExplorationManager>();
@@ -72,7 +75,8 @@ namespace Monstrology.Editor
                         Object.FindObjectOfType<AchievementPanel>(true);
                     TrackChainSystem trackChains = Object.FindObjectOfType<TrackChainSystem>();
                     MutationSystem legacyMutationSystem = Object.FindObjectOfType<MutationSystem>();
-                    if (game == null || ui == null || canvas == null || player == null ||
+                    if (game == null || ui == null || exploration == null ||
+                        canvas == null || player == null ||
                         world == null || interaction == null || cameraFollow == null ||
                         petCollection == null || petsPanel == null || accessoryInventory == null ||
                         breeding == null || upgrades == null || environment == null ||
@@ -83,6 +87,7 @@ namespace Monstrology.Editor
                             "Missing runtime objects: " +
                             "game=" + (game != null) +
                             ", ui=" + (ui != null) +
+                            ", exploration=" + (exploration != null) +
                             ", canvas=" + (canvas != null) +
                             ", player=" + (player != null) +
                             ", world=" + (world != null) +
@@ -129,15 +134,72 @@ namespace Monstrology.Editor
                             "Infinite map pooling or explorer compass was not initialized.");
                     }
 
+                    if (world.NavigationGuide.HasTarget || ui.ResultCardVisible)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Compass or discovery result is visible at startup.");
+                    }
+
+                    if (game.Energy < WorldExplorationManager.ExplorerCompassEnergyCost)
+                    {
+                        game.AddEnergy(
+                            WorldExplorationManager.ExplorerCompassEnergyCost - game.Energy);
+                    }
+
+                    int energyBeforeCompass = game.Energy;
                     int explorationCountBeforeCompass = game.ExplorationCount;
                     int creaturesBeforeCompass = game.TotalCreaturesFound;
-                    world.StartQuickSearch();
-                    if (!world.NavigationGuide.HasTarget ||
+                    bool compassStarted = world.StartQuickSearch();
+                    if (!compassStarted || !world.NavigationGuide.HasTarget ||
+                        game.Energy != energyBeforeCompass -
+                            WorldExplorationManager.ExplorerCompassEnergyCost ||
                         game.ExplorationCount != explorationCountBeforeCompass ||
                         game.TotalCreaturesFound != creaturesBeforeCompass)
                     {
                         throw new System.InvalidOperationException(
                             "Quick search granted a reward or failed to create a navigation target.");
+                    }
+
+                    int energyAfterCompass = game.Energy;
+                    if (world.StartQuickSearch() || game.Energy != energyAfterCompass)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Active one-shot compass was charged or replaced twice.");
+                    }
+
+                    WorldPickup compassTarget = world.NavigationGuide.Target;
+                    world.NotifyPickupCollected(compassTarget);
+                    if (world.NavigationGuide.HasTarget)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Compass stayed active after its target was collected.");
+                    }
+
+                    if (petCollection.Count > 0)
+                    {
+                        ui.OpenPets();
+                        RectTransform selectedCard = null;
+                        foreach (RectTransform rect in
+                                 canvas.GetComponentsInChildren<RectTransform>(true))
+                        {
+                            if (rect.name == "SelectedPet")
+                            {
+                                selectedCard = rect;
+                                break;
+                            }
+                        }
+
+                        if (selectedCard == null ||
+                            selectedCard.GetComponent<HorizontalLayoutGroup>() == null ||
+                            selectedCard.Find("PortraitColumn") == null ||
+                            selectedCard.Find("InfoColumn") == null ||
+                            selectedCard.Find("ActionsColumn") == null)
+                        {
+                            throw new System.InvalidOperationException(
+                                "Selected pet card does not use the three-column layout.");
+                        }
+
+                        ui.CloseAllPanels();
                     }
 
                     System.Collections.Generic.HashSet<string> uniqueSpecies =
@@ -208,9 +270,15 @@ namespace Monstrology.Editor
                         throw new System.InvalidOperationException("Evolution chain is not deterministic.");
                     }
 
-                    Debug.Log("MONSTROLOGY_SMOKE_TEST_PASS");
-                    SessionState.SetString(SessionKey, "exit");
-                    EditorApplication.ExitPlaymode();
+                    exploration.ResolveWorldDiscovery(ExplorationResultType.Nothing);
+                    if (!ui.ResultCardVisible)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Discovery result card did not become visible.");
+                    }
+
+                    SessionState.SetFloat(ResultShownAtKey, Time.realtimeSinceStartup);
+                    SessionState.SetString(SessionKey, "result_wait");
                 }
                 catch (System.Exception exception)
                 {
@@ -226,8 +294,46 @@ namespace Monstrology.Editor
                 return;
             }
 
+            if (stage == "result_wait" && EditorApplication.isPlaying)
+            {
+                float shownAt = SessionState.GetFloat(ResultShownAtKey, 0f);
+                if (Time.realtimeSinceStartup - shownAt < 3.6f)
+                {
+                    return;
+                }
+
+                try
+                {
+                    UIManager ui = Object.FindObjectOfType<UIManager>();
+                    if (ui == null || ui.ResultCardVisible)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Discovery result card did not hide after three seconds.");
+                    }
+
+                    Debug.Log("MONSTROLOGY_SMOKE_TEST_PASS");
+                    SessionState.EraseFloat(ResultShownAtKey);
+                    SessionState.SetString(SessionKey, "exit");
+                    EditorApplication.ExitPlaymode();
+                }
+                catch (System.Exception exception)
+                {
+                    Debug.LogException(exception);
+                    SessionState.EraseFloat(ResultShownAtKey);
+                    SessionState.EraseString(SessionKey);
+                    EditorApplication.update -= Tick;
+                    if (Application.isBatchMode)
+                    {
+                        EditorApplication.Exit(1);
+                    }
+                }
+
+                return;
+            }
+
             if (stage == "exit" && !EditorApplication.isPlayingOrWillChangePlaymode)
             {
+                SessionState.EraseFloat(ResultShownAtKey);
                 SessionState.EraseString(SessionKey);
                 EditorApplication.update -= Tick;
                 if (Application.isBatchMode)

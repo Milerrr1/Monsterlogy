@@ -5,8 +5,11 @@ namespace Monstrology
 {
     public class WorldExplorationManager : MonoBehaviour
     {
+        public const int ExplorerCompassEnergyCost = 3;
+
         [SerializeField] private List<BiomeMapData> mapCatalog = new List<BiomeMapData>();
         [SerializeField] private Transform worldRoot;
+        [SerializeField] private bool premiumCompassEnabled;
 
         private readonly List<SpawnPoint> spawnPoints = new List<SpawnPoint>();
         private readonly HashSet<WorldPickup> activePickups = new HashSet<WorldPickup>();
@@ -31,6 +34,7 @@ namespace Monstrology
         public int ActivePickupCount { get { return activePickups.Count; } }
         public InfiniteBiomeMap InfiniteMap { get { return infiniteMap; } }
         public WorldNavigationGuide NavigationGuide { get { return navigationGuide; } }
+        public bool PremiumCompassEnabled { get { return premiumCompassEnabled; } }
 
         public void Initialize(
             GameManager gameManager,
@@ -98,6 +102,7 @@ namespace Monstrology
             {
                 RefreshSpawnPointsNearPlayer();
                 RecycleDistantPickups();
+                MaintainPremiumCompass();
                 maintenanceTimer = 1f;
             }
 
@@ -438,11 +443,17 @@ namespace Monstrology
                        chainStage) != null;
         }
 
-        public void StartQuickSearch()
+        public bool StartQuickSearch()
         {
-            if (player == null || navigationGuide == null)
+            if (player == null || navigationGuide == null || game == null)
             {
-                return;
+                return false;
+            }
+
+            if (navigationGuide.HasTarget)
+            {
+                game.RaiseNotification("Компас уже указывает на находку.");
+                return false;
             }
 
             WorldPickup nearest = FindNearestInterestingPickup();
@@ -455,11 +466,32 @@ namespace Monstrology
             if (nearest == null)
             {
                 game.RaiseNotification("Компас пока не нашёл интересную цель.");
-                return;
+                return false;
+            }
+
+            if (!premiumCompassEnabled && !game.SpendEnergy(ExplorerCompassEnergyCost))
+            {
+                return false;
             }
 
             navigationGuide.SetTarget(nearest);
-            game.RaiseNotification("Компас указывает направление. Доберитесь до цели сами.");
+            game.RaiseNotification(premiumCompassEnabled
+                ? "Премиум-компас выбрал новую цель."
+                : "Компас активирован за 3 энергии. Доберитесь до цели.");
+            return true;
+        }
+
+        public void SetPremiumCompassEnabled(bool enabled)
+        {
+            premiumCompassEnabled = enabled;
+            if (premiumCompassEnabled)
+            {
+                MaintainPremiumCompass();
+            }
+            else if (navigationGuide != null)
+            {
+                navigationGuide.ClearTarget();
+            }
         }
 
         public void AdvanceTrackChain(WorldPickup trace)
@@ -472,7 +504,7 @@ namespace Monstrology
 
         public void SpawnTrackStep(Vector3 position, TrackType trackType, int stage)
         {
-            WorldPickup pickup = CreatePickup(
+            CreatePickup(
                 position,
                 WorldPickupType.Trace,
                 null,
@@ -481,10 +513,6 @@ namespace Monstrology
                 null,
                 null,
                 stage);
-            if (navigationGuide != null)
-            {
-                navigationGuide.SetTarget(pickup);
-            }
 
             game.RaiseNotification(stage >= 4
                 ? "Следы привели к логову."
@@ -513,7 +541,7 @@ namespace Monstrology
                 return;
             }
 
-            WorldPickup pickup = CreatePickup(
+            CreatePickup(
                 position,
                 WorldPickupType.Creature,
                 selected,
@@ -522,12 +550,23 @@ namespace Monstrology
                 null,
                 null,
                 -1);
-            if (navigationGuide != null)
-            {
-                navigationGuide.SetTarget(pickup);
-            }
 
             game.RaiseNotification("Впереди редкое существо.");
+        }
+
+        private void MaintainPremiumCompass()
+        {
+            if (!premiumCompassEnabled || navigationGuide == null ||
+                navigationGuide.HasTarget || player == null)
+            {
+                return;
+            }
+
+            WorldPickup target = FindNearestInterestingPickup();
+            if (target != null)
+            {
+                navigationGuide.SetTarget(target);
+            }
         }
 
         private WorldPickup CreatePickup(

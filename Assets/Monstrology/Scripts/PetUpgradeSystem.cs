@@ -72,7 +72,7 @@ namespace Monstrology
             ItemData resource = GetRequiredResource(pet);
             if (resource == null)
             {
-                reason = "Для этого вида ресурс прокачки пока не назначен.";
+                reason = "Прокачка для этого питомца пока недоступна.";
                 return false;
             }
 

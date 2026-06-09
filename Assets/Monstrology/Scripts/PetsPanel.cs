@@ -103,9 +103,21 @@ namespace Monstrology
             UIFactory.AddSoftShadow(card.gameObject);
             UIFactory.SetLayoutHeight(card.gameObject, 360f);
 
-            Image portrait = UIFactory.Image("Portrait", card.transform, Color.white);
-            UIFactory.SetRect(portrait.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-                new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(132f, 132f));
+            HorizontalLayoutGroup cardLayout = card.gameObject.AddComponent<HorizontalLayoutGroup>();
+            cardLayout.padding = new RectOffset(20, 20, 18, 18);
+            cardLayout.spacing = 18f;
+            cardLayout.childAlignment = TextAnchor.UpperLeft;
+            cardLayout.childControlHeight = true;
+            cardLayout.childControlWidth = true;
+            cardLayout.childForceExpandHeight = true;
+            cardLayout.childForceExpandWidth = false;
+
+            Transform left = CreateColumn(card.transform, "PortraitColumn", 150f, 0f);
+            Transform center = CreateColumn(card.transform, "InfoColumn", 280f, 1f);
+            Transform right = CreateColumn(card.transform, "ActionsColumn", 220f, 0f);
+
+            Image portrait = UIFactory.Image("Portrait", left, Color.white);
+            SetLayoutSize(portrait.gameObject, 140f, 140f, 0f);
             portrait.sprite = species != null && species.icon != null
                 ? species.icon
                 : WorldPlaceholderSprites.Circle;
@@ -115,99 +127,119 @@ namespace Monstrology
             portrait.preserveAspect = true;
             AccessoryVisualUtility.BuildUiVisuals(portrait.transform, pet, accessoryInventory);
 
-            string favorite = pet.isFavorite ? "ЛЮБИМЧИК  |  " : "";
             Text name = UIFactory.Text(
                 "PetName",
-                card.transform,
-                favorite + pet.GetDisplayName(species),
+                center,
+                pet.GetDisplayName(species),
                 24,
                 FontStyle.Bold,
-                TextAnchor.UpperLeft);
-            UIFactory.SetRect(name.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f),
-                new Vector2(0.5f, 1f), new Vector2(88f, -18f), new Vector2(-210f, 36f));
+                TextAnchor.MiddleLeft);
+            UIFactory.SetLayoutHeight(name.gameObject, 38f);
             name.color = PetLocalization.RarityColor(pet.rarity);
 
             string speciesName = species != null ? species.creatureName : pet.speciesId;
             Text details = UIFactory.Text(
                 "Details",
-                card.transform,
+                center,
                 "Вид: " + speciesName +
                 "\nУровень: " + pet.level + " / " + PetUpgradeSystem.MaxLevel +
                 "\nОпыт: " + pet.experience +
                 "\nКопий собрано: " + game.GetCreatureCount(pet.speciesId) +
                 "\nРедкость: " + PetLocalization.Rarity(pet.rarity) +
-                "\nХарактер: " + PetLocalization.Personality(pet.personalityType) +
-                "\nВозраст: " + FormatAge(pet.ageInDays),
+                "\nХарактер: " + PetLocalization.Personality(pet.personalityType),
                 15,
                 FontStyle.Normal,
                 TextAnchor.UpperLeft);
-            UIFactory.SetOffsets(details.rectTransform, Vector2.zero, Vector2.one,
-                new Vector2(178f, 96f), new Vector2(-250f, -58f));
+            UIFactory.SetLayoutHeight(details.gameObject, 126f);
             details.color = new Color(0.84f, 0.88f, 0.94f);
 
             Text genes = UIFactory.Text(
                 "Genes",
-                card.transform,
+                left,
                 PetDetailsPanel.BuildGeneticsText(pet) + "\n" +
                 PetDetailsPanel.BuildAccessoryText(pet, accessoryInventory),
-                14,
+                12,
                 FontStyle.Normal,
                 TextAnchor.UpperLeft);
-            UIFactory.SetOffsets(genes.rectTransform, Vector2.zero, Vector2.one,
-                new Vector2(24f, 18f), new Vector2(-250f, -252f));
+            UIFactory.SetLayoutHeight(genes.gameObject, 156f);
             genes.color = new Color(0.72f, 0.88f, 0.92f);
-
-            InputField renameInput = UIFactory.InputField(
-                "RenameInput",
-                card.transform,
-                pet.customName,
-                "Имя питомца");
-            UIFactory.SetRect(renameInput.GetComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(1f, 1f), new Vector2(-22f, -26f), new Vector2(220f, 42f));
-
-            Button rename = UIFactory.Button("Rename", card.transform, "СОХРАНИТЬ ИМЯ",
-                new Color(0.26f, 0.52f, 0.72f));
-            UIFactory.SetRect(rename.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f), new Vector2(-22f, 86f), new Vector2(220f, 42f));
-            rename.onClick.AddListener(delegate
-            {
-                collection.RenamePet(pet.uniqueId, renameInput.text);
-            });
 
             ItemData resource = upgrades != null ? upgrades.GetRequiredResource(pet) : null;
             int required = upgrades != null ? upgrades.GetRequiredResourceCount(pet) : 0;
             int owned = resource != null ? game.GetItemCount(resource.id) : 0;
             Text upgradeInfo = UIFactory.Text(
                 "UpgradeInfo",
-                card.transform,
-                "Ресурс: " + (resource != null ? resource.itemName : "не назначен") +
-                "\nВ наличии: " + owned + " / " + required,
+                center,
+                resource != null
+                    ? "Ресурс: " + resource.itemName +
+                      "\nВ наличии: " + owned + " / Нужно: " + required
+                    : "Прокачка для этого питомца пока недоступна.",
                 14,
                 FontStyle.Normal,
                 TextAnchor.MiddleLeft);
-            UIFactory.SetRect(
-                upgradeInfo.rectTransform,
-                new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f),
-                new Vector2(-22f, 20f),
-                new Vector2(220f, 62f));
-            upgradeInfo.color = new Color(0.86f, 0.91f, 0.98f);
+            UIFactory.SetLayoutHeight(upgradeInfo.gameObject, 52f);
+            upgradeInfo.color = resource != null
+                ? new Color(0.86f, 0.91f, 0.98f)
+                : new Color(0.72f, 0.76f, 0.84f);
 
-            string upgradeReason;
+            GameObject renameRow = UIFactory.Object("RenameRow", center);
+            UIFactory.SetLayoutHeight(renameRow, 44f);
+            HorizontalLayoutGroup renameLayout = renameRow.AddComponent<HorizontalLayoutGroup>();
+            renameLayout.spacing = 8f;
+            renameLayout.childControlHeight = true;
+            renameLayout.childControlWidth = true;
+            renameLayout.childForceExpandHeight = true;
+            renameLayout.childForceExpandWidth = false;
+
+            InputField renameInput = UIFactory.InputField(
+                "RenameInput",
+                renameRow.transform,
+                pet.customName,
+                "Имя");
+            SetLayoutSize(renameInput.gameObject, 130f, 44f, 1f);
+
+            Button rename = UIFactory.Button("Rename", renameRow.transform, "СОХРАНИТЬ",
+                new Color(0.26f, 0.52f, 0.72f));
+            SetLayoutSize(rename.gameObject, 118f, 44f, 0f);
+            rename.onClick.AddListener(delegate
+            {
+                collection.RenamePet(pet.uniqueId, renameInput.text);
+            });
+
+            if (pet.isFavorite)
+            {
+                Text favoriteStatus = UIFactory.Text(
+                    "FavoriteStatus",
+                    right,
+                    "УЖЕ ЛЮБИМЧИК",
+                    15,
+                    FontStyle.Bold,
+                    TextAnchor.MiddleCenter);
+                UIFactory.SetLayoutHeight(favoriteStatus.gameObject, 48f);
+                favoriteStatus.color = new Color(0.72f, 0.86f, 0.48f);
+            }
+            else
+            {
+                Button favoriteButton = UIFactory.Button(
+                    "Favorite",
+                    right,
+                    "СДЕЛАТЬ ЛЮБИМЧИКОМ",
+                    new Color(0.7f, 0.46f, 0.2f));
+                UIFactory.SetLayoutHeight(favoriteButton.gameObject, 48f);
+                favoriteButton.onClick.AddListener(delegate
+                {
+                    collection.SetFavorite(pet.uniqueId);
+                });
+            }
+
+            string upgradeReason = string.Empty;
             bool canUpgrade = upgrades != null && upgrades.CanUpgrade(pet, out upgradeReason);
             Button upgradeButton = UIFactory.Button(
                 "Upgrade",
-                card.transform,
+                right,
                 pet.level >= PetUpgradeSystem.MaxLevel ? "МАКС. УРОВЕНЬ" : "ПОВЫСИТЬ УРОВЕНЬ",
                 new Color(0.25f, 0.62f, 0.46f));
-            UIFactory.SetRect(
-                upgradeButton.GetComponent<RectTransform>(),
-                new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f),
-                new Vector2(-22f, -42f),
-                new Vector2(220f, 44f));
+            UIFactory.SetLayoutHeight(upgradeButton.gameObject, 52f);
             upgradeButton.interactable = canUpgrade;
             upgradeButton.onClick.AddListener(() =>
             {
@@ -219,21 +251,62 @@ namespace Monstrology
                 }
             });
 
-            Button favoriteButton = UIFactory.Button(
-                "Favorite",
-                card.transform,
-                pet.isFavorite ? "УЖЕ ЛЮБИМЧИК" : "СДЕЛАТЬ ЛЮБИМЧИКОМ",
-                pet.isFavorite
-                    ? new Color(0.42f, 0.5f, 0.3f)
-                    : new Color(0.7f, 0.46f, 0.2f));
-            UIFactory.SetRect(favoriteButton.GetComponent<RectTransform>(),
-                new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f),
-                new Vector2(-22f, 18f), new Vector2(220f, 42f));
-            favoriteButton.interactable = !pet.isFavorite;
-            favoriteButton.onClick.AddListener(delegate
+            Text upgradeStatus = UIFactory.Text(
+                "UpgradeStatus",
+                right,
+                canUpgrade
+                    ? "Ресурсов достаточно."
+                    : resource == null
+                        ? "Прокачка пока недоступна."
+                        : upgradeReason,
+                13,
+                FontStyle.Normal,
+                TextAnchor.UpperCenter);
+            UIFactory.SetLayoutHeight(upgradeStatus.gameObject, 82f);
+            upgradeStatus.color = canUpgrade
+                ? new Color(0.52f, 0.9f, 0.64f)
+                : new Color(0.82f, 0.78f, 0.72f);
+        }
+
+        private static Transform CreateColumn(
+            Transform parent,
+            string name,
+            float preferredWidth,
+            float flexibleWidth)
+        {
+            GameObject column = UIFactory.Object(name, parent);
+            LayoutElement element = column.AddComponent<LayoutElement>();
+            element.minWidth = preferredWidth;
+            element.preferredWidth = preferredWidth;
+            element.flexibleWidth = flexibleWidth;
+
+            VerticalLayoutGroup layout = column.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = 8f;
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childControlHeight = true;
+            layout.childControlWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childForceExpandWidth = true;
+            return column.transform;
+        }
+
+        private static void SetLayoutSize(
+            GameObject target,
+            float preferredWidth,
+            float preferredHeight,
+            float flexibleWidth)
+        {
+            LayoutElement element = target.GetComponent<LayoutElement>();
+            if (element == null)
             {
-                collection.SetFavorite(pet.uniqueId);
-            });
+                element = target.AddComponent<LayoutElement>();
+            }
+
+            element.minWidth = preferredWidth;
+            element.preferredWidth = preferredWidth;
+            element.flexibleWidth = flexibleWidth;
+            element.minHeight = preferredHeight;
+            element.preferredHeight = preferredHeight;
         }
 
         private void BuildPetRow(CreatureInstance pet)

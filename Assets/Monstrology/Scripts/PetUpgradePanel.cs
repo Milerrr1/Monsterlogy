@@ -101,8 +101,10 @@ namespace Monstrology
             int required = upgrades.GetRequiredResourceCount(pet);
             int owned = resource != null ? game.GetItemCount(resource.id) : 0;
             details.text = "Текущий уровень: " + pet.level + " / " + PetUpgradeSystem.MaxLevel +
-                           "\nНужный ресурс: " + (resource != null ? resource.itemName : "не назначен") +
-                           "\nВ наличии: " + owned + " / " + required;
+                           (resource != null
+                               ? "\nНужный ресурс: " + resource.itemName +
+                                 "\nВ наличии: " + owned + " / Нужно: " + required
+                               : "\nПрокачка для этого питомца пока недоступна.");
 
             string reason;
             upgradeButton.interactable = upgrades.CanUpgrade(pet, out reason);

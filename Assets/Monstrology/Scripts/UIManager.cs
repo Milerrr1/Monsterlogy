@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -27,6 +28,9 @@ namespace Monstrology
         private Text resultTitle;
         private Text resultDescription;
         private Image resultIcon;
+        private GameObject resultCard;
+        private CanvasGroup resultCanvasGroup;
+        private Coroutine resultHideRoutine;
         private Text tracksText;
         private Text notificationText;
 
@@ -47,6 +51,11 @@ namespace Monstrology
         private PetAdoptionDialog adoptionDialog;
 
         private Transform questContent;
+
+        public bool ResultCardVisible
+        {
+            get { return resultCard != null && resultCard.activeSelf; }
+        }
 
         public void Initialize(
             GameManager gameManager,
@@ -224,10 +233,12 @@ namespace Monstrology
 
         private void BuildMainContent(Transform parent)
         {
-            Image resultCard = UIFactory.Image("ResultCard", parent, new Color(0.045f, 0.06f, 0.09f, 0.88f));
-            UIFactory.ApplyRounded(resultCard);
-            UIFactory.AddSoftShadow(resultCard.gameObject);
-            UIFactory.SetRect(resultCard.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f),
+            Image resultCardImage = UIFactory.Image("ResultCard", parent, new Color(0.045f, 0.06f, 0.09f, 0.88f));
+            resultCard = resultCardImage.gameObject;
+            resultCanvasGroup = resultCard.AddComponent<CanvasGroup>();
+            UIFactory.ApplyRounded(resultCardImage);
+            UIFactory.AddSoftShadow(resultCard);
+            UIFactory.SetRect(resultCardImage.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f),
                 new Vector2(0f, 1f), new Vector2(18f, -82f), new Vector2(370f, 152f));
 
             resultIcon = UIFactory.Image("ResultIcon", resultCard.transform, new Color(0.3f, 0.7f, 0.5f));
@@ -243,6 +254,7 @@ namespace Monstrology
             UIFactory.SetOffsets(resultDescription.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 1f),
                 new Vector2(126f, 14f), new Vector2(-16f, -54f));
             resultDescription.color = new Color(0.88f, 0.91f, 0.96f);
+            resultCard.SetActive(false);
 
             Button exploreButton = UIFactory.Button("ExploreFallback", parent, "КОМПАС ИССЛЕДОВАТЕЛЯ",
                 new Color(0.93f, 0.43f, 0.23f, 0.94f));
@@ -603,12 +615,25 @@ namespace Monstrology
 
         private void ShowExplorationResult(ExplorationResult result)
         {
+            if (result == null || resultCard == null)
+            {
+                return;
+            }
+
+            if (resultHideRoutine != null)
+            {
+                StopCoroutine(resultHideRoutine);
+            }
+
+            resultCard.SetActive(true);
+            resultCanvasGroup.alpha = 1f;
             resultTitle.text = result.title;
             resultTitle.color = result.accentColor;
             resultDescription.text = result.description;
             resultIcon.sprite = result.icon;
             resultIcon.color = result.icon == null ? result.accentColor : Color.white;
             notificationText.text = "";
+            resultHideRoutine = StartCoroutine(HideResultCardAfterDelay());
 
             if (result.firstSpeciesDiscovery && result.creature != null && adoptionDialog != null)
             {
@@ -625,12 +650,28 @@ namespace Monstrology
 
         private void ShowWelcome()
         {
-            resultTitle.text = "Добро пожаловать, исследователь!";
-            resultTitle.color = new Color(1f, 0.82f, 0.34f);
-            resultDescription.text =
-                "Ходите по карте с WASD, стрелками или джойстиком. Подойдите к находке и нажмите E.";
-            resultIcon.sprite = null;
-            resultIcon.color = new Color(0.28f, 0.72f, 0.5f);
+            if (resultCard != null)
+            {
+                resultCard.SetActive(false);
+            }
+        }
+
+        private IEnumerator HideResultCardAfterDelay()
+        {
+            yield return new WaitForSecondsRealtime(3f);
+
+            const float fadeDuration = 0.3f;
+            float elapsed = 0f;
+            while (elapsed < fadeDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                resultCanvasGroup.alpha = 1f - Mathf.Clamp01(elapsed / fadeDuration);
+                yield return null;
+            }
+
+            resultCard.SetActive(false);
+            resultCanvasGroup.alpha = 1f;
+            resultHideRoutine = null;
         }
 
         private void ShowNotification(string message)
