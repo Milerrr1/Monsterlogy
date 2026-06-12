@@ -14,6 +14,7 @@ namespace Monstrology
         [Range(1f, 4f)] public float rareCreatureMultiplier = 1.5f;
         [Range(1f, 4f)] public float biomeResourceMultiplier = 1.5f;
         public string specialObjectName;
+        public Sprite icon;
     }
 
     public class BiomeEventSystem : MonoBehaviour

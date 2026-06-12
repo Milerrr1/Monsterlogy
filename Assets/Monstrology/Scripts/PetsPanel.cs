@@ -118,10 +118,8 @@ namespace Monstrology
 
             Image portrait = UIFactory.Image("Portrait", left, Color.white);
             SetLayoutSize(portrait.gameObject, 140f, 140f, 0f);
-            portrait.sprite = species != null && species.icon != null
-                ? species.icon
-                : WorldPlaceholderSprites.Circle;
-            portrait.color = species != null && species.icon != null
+            portrait.sprite = SpriteDatabase.Active.GetCreaturePortrait(species);
+            portrait.color = SpriteDatabase.Active.HasCreatureArtwork(species)
                 ? Color.white
                 : PetLocalization.RarityColor(pet.rarity);
             portrait.preserveAspect = true;
@@ -323,10 +321,8 @@ namespace Monstrology
             Image portrait = UIFactory.Image("Portrait", row.transform, Color.white);
             UIFactory.SetRect(portrait.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
                 new Vector2(0f, 0.5f), new Vector2(16f, 0f), new Vector2(66f, 66f));
-            portrait.sprite = species != null && species.icon != null
-                ? species.icon
-                : WorldPlaceholderSprites.Circle;
-            portrait.color = species != null && species.icon != null
+            portrait.sprite = SpriteDatabase.Active.GetCreaturePortrait(species);
+            portrait.color = SpriteDatabase.Active.HasCreatureArtwork(species)
                 ? Color.white
                 : PetLocalization.RarityColor(pet.rarity);
             portrait.preserveAspect = true;

@@ -120,7 +120,9 @@ namespace Monstrology
             for (int index = 0; index < source.Count; index++)
             {
                 CreatureData creature = source[index];
-                if (creature != null && game.AreAppearanceConditionsMet(creature))
+                if (creature != null &&
+                    creature.appearanceChance > 0.001f &&
+                    game.AreAppearanceConditionsMet(creature))
                 {
                     candidates.Add(creature);
                 }
@@ -175,6 +177,51 @@ namespace Monstrology
             }
 
             return candidates[candidates.Count - 1];
+        }
+
+        public CreatureData SelectWorldCreature(IList<CreatureData> source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            List<CreatureData> common = new List<CreatureData>();
+            List<CreatureData> rare = new List<CreatureData>();
+            List<CreatureData> legendary = new List<CreatureData>();
+            foreach (CreatureData creature in source)
+            {
+                if (creature == null ||
+                    creature.appearanceChance <= 0.001f ||
+                    !game.AreAppearanceConditionsMet(creature))
+                {
+                    continue;
+                }
+
+                if (creature.rarity == CreatureRarity.Legendary ||
+                    creature.rarity == CreatureRarity.Secret)
+                {
+                    legendary.Add(creature);
+                }
+                else if (creature.rarity == CreatureRarity.Rare ||
+                         creature.rarity == CreatureRarity.Epic)
+                {
+                    rare.Add(creature);
+                }
+                else
+                {
+                    common.Add(creature);
+                }
+            }
+
+            float roll = UnityEngine.Random.value;
+            IList<CreatureData> selectedTier = roll < 0.667f
+                ? common
+                : roll < 0.934f
+                    ? rare
+                    : legendary;
+            CreatureData selected = SelectCreature(selectedTier);
+            return selected != null ? selected : SelectCreature(source);
         }
 
         public ItemData SelectItem(bool egg)
@@ -232,14 +279,16 @@ namespace Monstrology
             List<float> weights = new List<float>();
             foreach (AccessoryData accessory in game.Content.accessories)
             {
-                if (accessory == null || string.IsNullOrEmpty(accessory.id))
+                if (accessory == null || string.IsNullOrEmpty(accessory.id) ||
+                    game.CurrentBiome == null ||
+                    !CanAccessoryDropInBiome(accessory, game.CurrentBiome.type))
                 {
                     continue;
                 }
 
                 float rarityFactor = 1f / (1f + (int)accessory.rarity * 0.65f);
                 float weight = Mathf.Max(0.001f, accessory.dropChance) * rarityFactor;
-                if (game.CurrentBiome != null && accessory.signatureBiome == game.CurrentBiome.type)
+                if (accessory.IsSignature)
                 {
                     weight *= 1.4f;
                 }
@@ -264,6 +313,14 @@ namespace Monstrology
             }
 
             return candidates[candidates.Count - 1];
+        }
+
+        public static bool CanAccessoryDropInBiome(
+            AccessoryData accessory,
+            BiomeType biome)
+        {
+            return accessory != null &&
+                   (!accessory.IsSignature || accessory.IsSignatureForBiome(biome));
         }
 
         private ExplorationResult RollResult()
@@ -322,7 +379,7 @@ namespace Monstrology
                 title = firstDiscovery ? "Открытие: " + selected.creatureName : "Снова " + selected.creatureName,
                 description = discoveryText + "\nРедкость: " + Localization.Rarity(selected.rarity) +
                               "\n" + game.GetPseudoOnlineText(selected),
-                icon = selected.icon,
+                icon = SpriteDatabase.Active.GetCreaturePortrait(selected),
                 accentColor = Localization.RarityColor(selected.rarity),
                 creature = selected,
                 firstSpeciesDiscovery = firstDiscovery
@@ -347,6 +404,7 @@ namespace Monstrology
                 type = ExplorationResultType.Track,
                 title = "Найден след",
                 description = Localization.Track(track) + bonus,
+                icon = SpriteDatabase.Active.GetTrack(track),
                 accentColor = new Color(0.91f, 0.72f, 0.29f)
             };
         }
@@ -377,7 +435,7 @@ namespace Monstrology
                 title = egg ? "Загадочное яйцо" : "Полезная находка",
                 description = selected.itemName + "\n" + selected.description +
                               "\nВ инвентаре: " + game.GetItemCount(selected.id),
-                icon = selected.icon,
+                icon = SpriteDatabase.Active.GetItem(selected),
                 accentColor = egg
                     ? new Color(0.78f, 0.59f, 0.96f)
                     : new Color(0.35f, 0.78f, 0.62f)
@@ -402,7 +460,7 @@ namespace Monstrology
                 title = "Новая одежда",
                 description = selected.displayName + "\n" + selected.description +
                               "\nГардероб  |  Редкость: " + PetLocalization.Rarity(selected.rarity),
-                icon = selected.icon,
+                icon = SpriteDatabase.Active.GetAccessory(selected),
                 accentColor = PetLocalization.RarityColor(selected.rarity),
                 accessory = selected
             };
@@ -415,6 +473,7 @@ namespace Monstrology
                 type = ExplorationResultType.Nothing,
                 title = "Тихо...",
                 description = "Здесь ничего не нашлось, но исследование всё равно приблизило вас к секретам.",
+                icon = SpriteDatabase.Active.GetEmptyFinding(),
                 accentColor = new Color(0.55f, 0.58f, 0.64f)
             };
         }

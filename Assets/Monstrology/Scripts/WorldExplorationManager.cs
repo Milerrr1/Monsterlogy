@@ -6,6 +6,19 @@ namespace Monstrology
     public class WorldExplorationManager : MonoBehaviour
     {
         public const int ExplorerCompassEnergyCost = 3;
+        public const float TraceDropChance = 0.35f;
+        public const float ResourceDropChance = 0.25f;
+        public const float AccessoryDropChance = 0.10f;
+        public const float CreatureDropChance = 0.30f;
+        public static bool ReleaseDropChancesAreValid
+        {
+            get
+            {
+                return Mathf.Abs(
+                    TraceDropChance + ResourceDropChance +
+                    AccessoryDropChance + CreatureDropChance - 1f) < 0.001f;
+            }
+        }
 
         [SerializeField] private List<BiomeMapData> mapCatalog = new List<BiomeMapData>();
         [SerializeField] private Transform worldRoot;
@@ -34,6 +47,24 @@ namespace Monstrology
         public BiomeData LoadedBiome { get { return loadedBiome; } }
         public BiomeMapData CurrentMapData { get { return currentMapData; } }
         public int ActivePickupCount { get { return activePickups.Count; } }
+        public int PersistentNestCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (WorldPickup pickup in activePickups)
+                {
+                    if (pickup != null &&
+                        pickup.PickupType == WorldPickupType.CreatureNest &&
+                        pickup.IsPersistent)
+                    {
+                        count++;
+                    }
+                }
+
+                return count;
+            }
+        }
         public InfiniteBiomeMap InfiniteMap { get { return infiniteMap; } }
         public WorldNavigationGuide NavigationGuide { get { return navigationGuide; } }
         public bool PremiumCompassEnabled { get { return premiumCompassEnabled; } }
@@ -121,7 +152,7 @@ namespace Monstrology
             }
 
             int targetCount = Mathf.Max(0, currentMapData.activeFindings);
-            if (activePickups.Count >= targetCount)
+            if (GetRegularPickupCount() >= targetCount)
             {
                 return;
             }
@@ -251,7 +282,7 @@ namespace Monstrology
             GameObject map = new GameObject(biome.type + "MapPrefab_Runtime");
             map.transform.SetParent(worldRoot, false);
 
-            CreateFallbackDecorations(map.transform, data.backgroundColor);
+            CreateFallbackDecorations(map.transform, biome.type, data.backgroundColor);
             CreateFallbackSpawnPoints(map.transform, biome.type);
             return map;
         }
@@ -263,8 +294,10 @@ namespace Monstrology
                 return;
             }
 
-            Sprite sprite = data.background != null ? data.background : WorldPlaceholderSprites.Square;
-            Color color = data.background != null ? Color.white : data.backgroundColor;
+            Sprite sprite = SpriteDatabase.Active.GetBiomeBackground(loadedBiome, data);
+            Color color = SpriteDatabase.Active.HasBiomeArtwork(loadedBiome, data)
+                ? Color.white
+                : data.backgroundColor;
             Transform existing = map.transform.Find("Background");
             if (existing != null)
             {
@@ -380,6 +413,7 @@ namespace Monstrology
                 }
             }
 
+            SpawnDiscoveredNestMarkers();
             respawnTimer = Mathf.Max(0.25f, currentMapData.respawnInterval);
         }
 
@@ -409,7 +443,7 @@ namespace Monstrology
                 IList<CreatureData> creatures = currentMapData.possibleCreatures.Count > 0
                     ? currentMapData.possibleCreatures
                     : loadedBiome.availableCreatures;
-                creature = exploration.SelectCreature(creatures);
+                creature = exploration.SelectWorldCreature(creatures);
                 if (creature == null)
                 {
                     type = WorldPickupType.Trace;
@@ -535,24 +569,33 @@ namespace Monstrology
 
         public void SpawnTrackedCreature(Vector3 position)
         {
-            IList<CreatureData> source = currentMapData.possibleCreatures.Count > 0
-                ? currentMapData.possibleCreatures
-                : loadedBiome.availableCreatures;
+            IList<CreatureData> source = loadedBiome.availableCreatures;
+            List<CreatureData> available = new List<CreatureData>();
             List<CreatureData> rare = new List<CreatureData>();
             foreach (CreatureData creature in source)
             {
-                if (creature != null && creature.rarity != CreatureRarity.Common &&
+                if (creature != null &&
+                    creature.appearanceChance > 0.001f &&
                     game.AreAppearanceConditionsMet(creature))
                 {
-                    rare.Add(creature);
+                    available.Add(creature);
+                    if (creature.rarity != CreatureRarity.Common)
+                    {
+                        rare.Add(creature);
+                    }
                 }
             }
 
-            List<CreatureData> nestCandidates = rare.FindAll(creature =>
+            List<CreatureData> nestCandidates = available.FindAll(creature =>
                 game.Content.creatureNests.Exists(nest =>
-                    nest != null && nest.speciesId == creature.id));
+                    nest != null && nest.speciesId == creature.id &&
+                    (creatureNests == null || creatureNests.GetNest(nest.id) == null)));
             CreatureData selected = exploration.SelectCreature(
-                nestCandidates.Count > 0 ? nestCandidates : rare.Count > 0 ? rare : source);
+                nestCandidates.Count > 0
+                    ? nestCandidates
+                    : rare.Count > 0
+                        ? rare
+                        : available);
             if (selected == null)
             {
                 game.RaiseNotification("След оборвался: условия появления существа изменились.");
@@ -576,9 +619,24 @@ namespace Monstrology
                 return;
             }
 
-            CreatePickup(
+            WorldPickup nestPickup = CreatePickup(
                 position,
                 WorldPickupType.CreatureNest,
+                selected,
+                null,
+                exploration.SelectTrack(),
+                null,
+                null,
+                -1);
+            if (nestPickup != null)
+            {
+                nestPickup.ConfigureNestMarker(nestData.id, false);
+            }
+
+            Vector2 nearbyOffset = UnityEngine.Random.insideUnitCircle.normalized * 2.2f;
+            CreatePickup(
+                position + (Vector3)nearbyOffset,
+                WorldPickupType.Creature,
                 selected,
                 null,
                 exploration.SelectTrack(),
@@ -606,34 +664,38 @@ namespace Monstrology
                 return;
             }
 
-            string rewardMessage;
-            creatureNests.Claim(progress.nestId, out rewardMessage);
-            game.AddTrack(TrackType.Lair);
+            CreatureNestData data = creatureNests.GetNestData(progress.nestId);
+            pickup.ConfigureNestMarker(progress.nestId, true);
+            if (navigationGuide != null)
+            {
+                navigationGuide.ClearTarget(pickup);
+            }
+
+            if (discovered)
+            {
+                game.AddTrack(TrackType.Lair);
+            }
+
             exploration.PublishExternalResult(new ExplorationResult
             {
                 type = ExplorationResultType.CreatureNest,
                 title = discovered
                     ? "Новое логовище: " + pickup.Creature.creatureName
-                    : "Знакомое логовище",
+                    : data != null ? data.displayName : "Знакомое логовище",
                 description = (discovered
-                                  ? "Логовище навсегда добавлено в коллекцию."
-                                  : "Вы снова нашли это логовище.") +
-                              "\n" + rewardMessage,
-                icon = pickup.Creature.icon,
+                                  ? "Логовище открыто и теперь всегда отмечено в этом биоме."
+                                  : "Вы вернулись к знакомому логовищу.") +
+                              "\nОсмотрите его, когда награда будет готова.",
+                icon = SpriteDatabase.Active.GetNest(data),
                 accentColor = new Color(0.82f, 0.58f, 0.3f),
                 creature = pickup.Creature
-            });
+            }, discovered);
 
-            Vector2 offset = UnityEngine.Random.insideUnitCircle.normalized * 2.2f;
-            CreatePickup(
-                pickup.transform.position + (Vector3)offset,
-                WorldPickupType.Creature,
-                pickup.Creature,
-                null,
-                exploration.SelectTrack(),
-                null,
-                null,
-                -1);
+            UIManager ui = FindObjectOfType<UIManager>();
+            if (ui != null)
+            {
+                ui.OpenNest(progress);
+            }
         }
 
         public void ResolveSpecialMapEvent(WorldPickup pickup)
@@ -662,7 +724,7 @@ namespace Monstrology
                 description = "Редкая находка события «" + pickup.BiomeEvent.displayName + "»." +
                               (reward != null ? "\nПолучено: 2 × " + reward.itemName : "") +
                               (rare != null ? "\nКопия вида: " + rare.creatureName : ""),
-                icon = reward != null ? reward.icon : null,
+                icon = SpriteDatabase.Active.GetSpecialEvent(pickup.BiomeEvent),
                 accentColor = new Color(0.95f, 0.42f, 0.82f)
             });
         }
@@ -727,7 +789,9 @@ namespace Monstrology
             }
 
             List<CreatureData> rare = loadedBiome.availableCreatures.FindAll(creature =>
-                creature != null && creature.rarity != CreatureRarity.Common &&
+                creature != null &&
+                creature.appearanceChance > 0.001f &&
+                creature.rarity != CreatureRarity.Common &&
                 game.AreAppearanceConditionsMet(creature));
             return rare.Count > 0 ? rare[UnityEngine.Random.Range(0, rare.Count)] : null;
         }
@@ -800,6 +864,18 @@ namespace Monstrology
                     continue;
                 }
 
+                if (pickup.IsPersistent &&
+                    pickup.PickupType == WorldPickupType.CreatureNest &&
+                    creatureNests != null)
+                {
+                    CreatureNestProgress progress =
+                        creatureNests.GetNest(pickup.NestId);
+                    if (progress != null && !creatureNests.IsRewardReady(progress))
+                    {
+                        continue;
+                    }
+                }
+
                 float distance = (pickup.transform.position - origin).sqrMagnitude;
                 if (distance < nearestDistance)
                 {
@@ -849,6 +925,7 @@ namespace Monstrology
             foreach (WorldPickup pickup in activePickups)
             {
                 if (pickup == null ||
+                    pickup.IsPersistent ||
                     (navigationGuide != null && navigationGuide.Target == pickup))
                 {
                     continue;
@@ -928,32 +1005,120 @@ namespace Monstrology
         private static WorldPickupType RollPickupType()
         {
             float roll = Random.value;
-            if (roll < 0.46f)
-            {
-                return WorldPickupType.Creature;
-            }
-
-            if (roll < 0.70f)
+            if (roll < TraceDropChance)
             {
                 return WorldPickupType.Trace;
             }
 
-            if (roll < 0.84f)
+            if (roll < TraceDropChance + ResourceDropChance - 0.02f)
             {
                 return WorldPickupType.Item;
             }
 
-            if (roll < 0.90f)
+            if (roll < TraceDropChance + ResourceDropChance)
             {
                 return WorldPickupType.Egg;
             }
 
-            if (roll < 0.97f)
+            if (roll < TraceDropChance + ResourceDropChance + AccessoryDropChance)
             {
                 return WorldPickupType.Accessory;
             }
 
-            return WorldPickupType.Nothing;
+            return WorldPickupType.Creature;
+        }
+
+        private int GetRegularPickupCount()
+        {
+            int count = 0;
+            foreach (WorldPickup pickup in activePickups)
+            {
+                if (pickup != null && !pickup.IsPersistent)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private void SpawnDiscoveredNestMarkers()
+        {
+            if (creatureNests == null || loadedBiome == null || player == null)
+            {
+                return;
+            }
+
+            int index = 0;
+            foreach (CreatureNestProgress progress in creatureNests.GetAllNests())
+            {
+                CreatureNestData data = progress != null
+                    ? creatureNests.GetNestData(progress.nestId)
+                    : null;
+                if (data == null || data.biome != loadedBiome.type ||
+                    FindNestMarker(data.id) != null)
+                {
+                    continue;
+                }
+
+                CreatureData creature = game.GetCreature(data.speciesId);
+                if (creature == null)
+                {
+                    continue;
+                }
+
+                uint hash = StableHash(data.id);
+                float angle = (hash % 360u) * Mathf.Deg2Rad;
+                float radius = 7.5f + hash % 5u;
+                Vector3 position = player.transform.position + new Vector3(
+                    Mathf.Cos(angle) * radius,
+                    Mathf.Sin(angle) * radius,
+                    0f);
+                position += new Vector3(index * 0.65f, index * 0.35f, 0f);
+                index++;
+
+                WorldPickup marker = CreatePickup(
+                    position,
+                    WorldPickupType.CreatureNest,
+                    creature,
+                    null,
+                    TrackType.Lair,
+                    null,
+                    null,
+                    -1);
+                if (marker != null)
+                {
+                    marker.ConfigureNestMarker(data.id, true);
+                }
+            }
+        }
+
+        private WorldPickup FindNestMarker(string nestId)
+        {
+            foreach (WorldPickup pickup in activePickups)
+            {
+                if (pickup != null &&
+                    pickup.PickupType == WorldPickupType.CreatureNest &&
+                    pickup.NestId == nestId)
+                {
+                    return pickup;
+                }
+            }
+
+            return null;
+        }
+
+        private static uint StableHash(string value)
+        {
+            uint hash = 2166136261u;
+            string source = value ?? string.Empty;
+            for (int index = 0; index < source.Length; index++)
+            {
+                hash ^= source[index];
+                hash *= 16777619u;
+            }
+
+            return hash;
         }
 
         private static void CreateBoundary(Transform parent, Vector2 size)
@@ -978,7 +1143,10 @@ namespace Monstrology
             collider.size = size;
         }
 
-        private static void CreateFallbackDecorations(Transform parent, Color biomeColor)
+        private static void CreateFallbackDecorations(
+            Transform parent,
+            BiomeType biome,
+            Color biomeColor)
         {
             Vector2[] positions =
             {
@@ -996,10 +1164,12 @@ namespace Monstrology
                 decoration.transform.localScale = index % 2 == 0
                     ? new Vector3(1.8f, 1.2f, 1f)
                     : new Vector3(1.2f, 1.8f, 1f);
-                SpriteRenderer renderer = decoration.AddComponent<SpriteRenderer>();
-                renderer.sprite = index % 2 == 0
-                    ? WorldPlaceholderSprites.Circle
-                    : WorldPlaceholderSprites.Square;
+                GameObject visual = new GameObject("Visual");
+                visual.transform.SetParent(decoration.transform, false);
+                SpriteRenderer renderer = visual.AddComponent<SpriteRenderer>();
+                renderer.sprite = SpriteDatabase.Active.GetBiomeDecoration(
+                    biome,
+                    index % 2 != 0);
                 renderer.color = Color.Lerp(biomeColor, Color.black, 0.28f);
                 renderer.sortingOrder = -5;
                 decoration.AddComponent<BoxCollider2D>();

@@ -49,8 +49,8 @@ namespace Monstrology
                 "Новый вид открыт в энциклопедии:\n" +
                 species.creatureName +
                 "\n\nДобавить питомца в личную коллекцию?";
-            portrait.sprite = species.icon != null ? species.icon : WorldPlaceholderSprites.Circle;
-            portrait.color = species.icon != null
+            portrait.sprite = SpriteDatabase.Active.GetCreaturePortrait(species);
+            portrait.color = SpriteDatabase.Active.HasCreatureArtwork(species)
                 ? Color.white
                 : Localization.RarityColor(species.rarity);
             nameInput.text = species.creatureName;

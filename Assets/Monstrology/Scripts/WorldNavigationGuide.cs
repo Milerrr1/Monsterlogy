@@ -16,8 +16,10 @@ namespace Monstrology
             player = playerTransform;
             if (arrow == null)
             {
-                arrow = gameObject.AddComponent<SpriteRenderer>();
-                arrow.sprite = WorldPlaceholderSprites.Diamond;
+                GameObject visualObject = new GameObject("Visual");
+                visualObject.transform.SetParent(transform, false);
+                arrow = visualObject.AddComponent<SpriteRenderer>();
+                arrow.sprite = SpriteDatabase.Active.GetCompassArrow();
                 arrow.color = new Color(1f, 0.88f, 0.3f, 0.95f);
                 arrow.sortingOrder = 40;
                 transform.localScale = new Vector3(0.45f, 0.8f, 1f);

@@ -14,10 +14,9 @@ namespace Monstrology
         private AccessoryInventoryManager accessories;
         private SignatureSetSystem signatureSets;
         private GameObject petObject;
-        private SpriteRenderer petRenderer;
+        private CreatureVisualRig visualRig;
         private TextMesh nameText;
         private TextMesh rarityText;
-        private Transform accessoryRoot;
         private GameObject fullSetEffect;
         private Vector3 velocity;
         private string displayedPetId;
@@ -109,9 +108,8 @@ namespace Monstrology
 
             petObject = new GameObject("FavoritePetFollower");
             petObject.transform.SetParent(transform, false);
-            petRenderer = petObject.AddComponent<SpriteRenderer>();
-            petRenderer.sprite = WorldPlaceholderSprites.Circle;
-            petRenderer.sortingOrder = 19;
+            visualRig = petObject.AddComponent<CreatureVisualRig>();
+            visualRig.EnsureStructure();
             petObject.transform.localScale = Vector3.one * 0.72f;
 
             GameObject label = new GameObject("Name");
@@ -133,15 +131,11 @@ namespace Monstrology
             rarityText.characterSize = 0.075f;
             rarityText.fontSize = 30;
 
-            GameObject accessoryObject = new GameObject("Accessories");
-            accessoryObject.transform.SetParent(petObject.transform, false);
-            accessoryRoot = accessoryObject.transform;
-
             fullSetEffect = new GameObject("SignatureSetEffect");
             fullSetEffect.transform.SetParent(petObject.transform, false);
             fullSetEffect.transform.localScale = Vector3.one * 1.8f;
             SpriteRenderer effectRenderer = fullSetEffect.AddComponent<SpriteRenderer>();
-            effectRenderer.sprite = WorldPlaceholderSprites.Ring;
+            effectRenderer.sprite = SpriteDatabase.Active.GetSignatureSetEffect();
             effectRenderer.color = new Color(0.55f, 0.86f, 1f, 0.55f);
             effectRenderer.sortingOrder = 18;
             fullSetEffect.SetActive(false);
@@ -162,10 +156,12 @@ namespace Monstrology
             bool changedPet = favorite.uniqueId != displayedPetId;
             displayedPetId = favorite.uniqueId;
             petObject.SetActive(true);
-            petRenderer.color = PetLocalization.RarityColor(favorite.rarity);
             CreatureData species = GameManager.Instance != null
                 ? GameManager.Instance.GetCreature(favorite.speciesId)
                 : null;
+            visualRig.ApplyCreature(
+                species,
+                PetLocalization.RarityColor(favorite.rarity));
             nameText.text = favorite.GetDisplayName(species);
             rarityText.text = PetLocalization.Rarity(favorite.rarity);
             rarityText.color = PetLocalization.RarityColor(favorite.rarity);
@@ -185,33 +181,10 @@ namespace Monstrology
 
         private void RebuildAccessoryVisuals(CreatureInstance favorite)
         {
-            for (int index = accessoryRoot.childCount - 1; index >= 0; index--)
-            {
-                Destroy(accessoryRoot.GetChild(index).gameObject);
-            }
-
             List<AccessoryData> equipped = accessories != null
                 ? accessories.GetEquippedAccessories(favorite.uniqueId)
                 : new List<AccessoryData>();
-            for (int index = 0; index < equipped.Count; index++)
-            {
-                AccessoryData accessory = equipped[index];
-                GameObject visual = new GameObject(accessory.slot + "_" + accessory.id);
-                visual.transform.SetParent(accessoryRoot, false);
-                visual.transform.localPosition = accessory.visualOffset;
-                Vector2 scale = accessory.visualScale == Vector2.zero
-                    ? Vector2.one
-                    : accessory.visualScale;
-                visual.transform.localScale = new Vector3(scale.x, scale.y, 1f) * 0.34f;
-                SpriteRenderer renderer = visual.AddComponent<SpriteRenderer>();
-                renderer.sprite = accessory.icon != null
-                    ? accessory.icon
-                    : WorldPlaceholderSprites.Square;
-                renderer.color = accessory.icon != null
-                    ? Color.white
-                    : PetLocalization.RarityColor(accessory.rarity);
-                renderer.sortingOrder = 20 + index;
-            }
+            visualRig.ApplyAccessories(equipped);
         }
     }
 }

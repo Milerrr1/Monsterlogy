@@ -33,12 +33,16 @@ namespace Monstrology
     {
         public string id;
         public string displayName;
+        [TextArea(2, 4)] public string description;
+        public Sprite icon;
         public string speciesId;
         public BiomeType biome;
         [Min(0.05f)] public float rewardCooldownHours = 3f;
         [Min(1)] public int baseCopyReward = 1;
         [Min(0)] public int baseResourceReward = 1;
         [Range(0f, 1f)] public float rareAccessoryChance = 0.08f;
+        [Range(0f, 1f)] public float specialCreatureChance = 0.12f;
+        public string specialCreatureId;
         [Min(1)] public int claimsPerLevel = 3;
         [Min(1)] public int maxLevel = 5;
     }
@@ -222,12 +226,25 @@ namespace Monstrology
             {
                 List<AccessoryData> candidates = game.Content.accessories.FindAll(accessory =>
                     accessory != null && !inventory.HasAccessory(accessory.id) &&
-                    (accessory.signatureBiome == data.biome ||
-                     accessory.rarity >= PetRarity.Rare));
+                    ((accessory.IsSignature && accessory.IsSignatureForBiome(data.biome)) ||
+                     (!accessory.IsSignature && accessory.rarity >= PetRarity.Rare)));
                 if (candidates.Count > 0)
                 {
                     rareAccessory = candidates[UnityEngine.Random.Range(0, candidates.Count)];
                     inventory.AddAccessory(rareAccessory);
+                }
+            }
+
+            CreatureData specialCreature = null;
+            if (UnityEngine.Random.value < data.specialCreatureChance)
+            {
+                string specialId = string.IsNullOrEmpty(data.specialCreatureId)
+                    ? data.speciesId
+                    : data.specialCreatureId;
+                specialCreature = game.GetCreature(specialId);
+                if (specialCreature != null)
+                {
+                    game.AddCreature(specialCreature);
                 }
             }
 
@@ -241,7 +258,10 @@ namespace Monstrology
 
             message = data.displayName + ": +" + copies + " коп." +
                       (resource != null ? ", +" + resources + " " + resource.itemName : "") +
-                      (rareAccessory != null ? ", " + rareAccessory.displayName : "");
+                      (rareAccessory != null ? ", " + rareAccessory.displayName : "") +
+                      (specialCreature != null
+                          ? ", особая встреча: " + specialCreature.creatureName
+                          : "");
             if (NestClaimed != null)
             {
                 NestClaimed(data.id);

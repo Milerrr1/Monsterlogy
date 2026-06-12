@@ -32,6 +32,11 @@ Monstrology
 ├── BiomeEventSystem
 ├── FavoriteHelperSystem
 ├── AchievementSystem
+├── AudioManager
+├── DailyRewardSystem
+├── GameplayHintSystem
+├── EncyclopediaAvailabilityCheck
+├── ReleaseReadinessCheck
 ├── QuestSystem
 ├── YandexGamesBridge
 ├── UIManager
@@ -48,8 +53,11 @@ Monstrology
     ├── Карта биомов
     ├── Питомцы / Гардероб
     ├── Эволюция видов
-    ├── Достижения
-    └── Квесты
+    ├── Логовище
+    ├── Квесты
+    ├── Пауза / Настройки / Достижения
+    ├── Вступление профессора
+    └── Ежедневная награда
 ```
 
 Canvas использует `Screen Space Overlay`, `CanvasScaler / Scale With Screen Size`,
@@ -67,13 +75,17 @@ reference resolution `960 x 540`, match `0.5`.
 | Питомцы | `UIManager.OpenPets()` |
 | Гардероб | `UIManager.OpenWardrobe()` |
 | Эволюция | `UIManager.OpenBreeding()` |
-| Достижения | `UIManager.OpenAchievements()` |
 | Квесты | `UIManager.OpenQuests()` |
+| Пауза | `UIManager.TogglePause()` |
 | Закрыть окно | `UIManager.CloseAllPanels()` |
 | Энергия за рекламу | `UIManager.ShowRewardedEnergy()` |
 
 Динамические кнопки выбора биома, получения квеста и покупки подсказки привязываются кодом,
 потому что каждая из них хранит ссылку на конкретные данные.
+
+Достижения открываются из меню паузы. `Escape` закрывает текущее окно, возвращает в меню
+паузы или продолжает игру. Громкость музыки и звуков сохраняется отдельно в PlayerPrefs
+под ключами `MusicVolume` и `SfxVolume`.
 
 ## Авторские ScriptableObject-данные
 
@@ -93,6 +105,11 @@ reference resolution `960 x 540`, match `0.5`.
 5. В каждом `BiomeData` заполните `Available Creatures`.
 6. В `Species Evolutions` укажите базовый вид, число копий и следующую форму.
 
+`ContentAvailabilityRepair` исправляет недостижимые привязки и условия. Если ручная
+цепочка отсутствует или короче трёх форм, `EvolutionFallbackBuilder` добавит стабильные
+runtime-формы II/III, а `NestFallbackBuilder` создаст недостающее логовище базового вида.
+Ручные данные всегда имеют приоритет.
+
 ID должны быть уникальными, стабильными и состоять из латиницы, цифр и подчёркиваний.
 Сохранение использует ID, поэтому переименование отображаемого имени безопасно, а изменение ID
 после релиза разорвёт старые записи прогресса.
@@ -100,7 +117,9 @@ ID должны быть уникальными, стабильными и со�
 ### CreatureData
 
 - `Id`: стабильный ID.
-- `Creature Name`, `Description`, `Icon`.
+- `Creature Name`, `Description`.
+- `Portrait Sprite`, `World Sprite`, необязательный `Evolution Sprite`.
+- `Icon`: legacy-fallback для существующих ассетов.
 - `Rarity`: Common, Rare, Epic, Legendary или Secret.
 - `Element`, `Biome`.
 - `Appearance Chance`: относительный вес внутри биома.
@@ -131,13 +150,31 @@ ID должны быть уникальными, стабильными и со�
 Выберите цель, требуемое количество, награду монетами и энергией. Для `UnlockBiome`
 также задайте нужный биом.
 
+### AccessoryData
+
+Обычная одежда имеет выключенный `Is Signature` и может выпадать в любом биоме.
+Для сигнатурной одежды заполните `Is Signature`, `Signature Biome Id`,
+опциональный `Signature Species Id` и `Set Id`. Legacy-поля
+`Signature Set Id` и `Signature Biome` продолжают поддерживаться.
+
+### CreatureNestData
+
+Логово связывается с `Species Id` и биомом. После открытия оно сохраняется и при следующем
+посещении биома восстанавливается как постоянный объект карты. `NestPanel` показывает
+связанное существо, уровень, таймер и кнопку повторного осмотра.
+
 ## Сохранение
 
 `SaveSystem` хранит JSON в `PlayerPrefs` под прежним ключом `Monstrology.Progress.v1`.
-Формат версии 6 автоматически дополняет старые сохранения. Сохраняются монеты, энергия и её UTC-таймер, биом,
+Формат версии 8 автоматически дополняет старые сохранения. Сохраняются монеты, энергия и её UTC-таймер, биом,
 исследования, открытые виды, копии, питомцы, уровни, предметы, гардероб, следы, время суток,
 погода, логовища и их уровни, прогресс комплектов, активные бонусы комплектов, найденные события,
-стартовый буст, достижения, квесты и купленные подсказки.
+стартовый буст, достижения, квесты, уровни купленных подсказок, прохождение вступления и серия
+ежедневных наград.
+
+Новый игрок начинает с `50` монет и `75` энергии; вступление доводит запас до `75`
+монет и `100` энергии. Валюта дальше поступает из находок, квестов, достижений и
+ежедневных наград.
 
 Для сброса во время разработки вызовите `GameManager.ResetProgress()` или удалите PlayerPrefs.
 
@@ -160,6 +197,28 @@ ID должны быть уникальными, стабильными и со�
 
 ## Основные файлы
 
+### Замена графики
+
+Центральная база находится в
+`Assets/Monstrology/Art/Resources/SpriteDatabase.asset` и открывается через
+`Tools > Monstrology > Open Sprite Database`.
+
+`SpriteDatabase` разрешает спрайты существ, предметов, одежды, логовищ и событий по
+стабильному `id`, а фоны и декорации — по `BiomeType`. Следы связываются по `TrackType`.
+Назначенная в базе ссылка имеет приоритет над совместимыми полями `icon` и `background`
+в существующих ScriptableObject. Если новая ссылка ещё не назначена, база выдаёт
+runtime-fallback, поэтому незавершённый арт не ломает игру.
+
+Мировые находки, любимчик, компас и декорации используют отдельные дочерние
+`SpriteRenderer`; Canvas продолжает использовать штатные `Image`. Замена спрайта не
+изменяет ID, прогресс, условия появления или формат сохранения.
+
+Все существа используют `CreatureBaseTemplate`: холст `2048x2048`, прозрачный фон,
+safe zone `10%`, фронтальный симметричный вид и пропорции головы/тела/ног `40/40/20`.
+`CreatureVisualRig` автоматически создаёт дочерний `Visual` с `SpriteRenderer` и
+якоря `HeadAnchor`, `BodyAnchor`, `LegAnchor`. Гардероб использует только эти якоря,
+поэтому замена спрайта не требует ручных смещений для каждого вида.
+
 - `GameManager.cs`: состояние, экономика, условия и прогресс.
 - `ExplorationSystem.cs`: выдача награды после взаимодействия с находкой.
 - `WorldExplorationManager.cs`, `InfiniteBiomeMap.cs`, `TileRepeater.cs`: мир, компас и пул фоновых тайлов.
@@ -168,10 +227,40 @@ ID должны быть уникальными, стабильными и со�
 - `EnergyRegenerationSystem.cs`, `StarterBoostSystem.cs`: онлайн/офлайн энергия и первые 15 минут прогрессии.
 - `SignatureSetSystem.cs`: прогресс, бонусы и завершение тематических комплектов одежды.
 - `CreatureNestSystem.cs`: постоянные логовища, таймеры наград и уровни логовищ.
+- `NestPanel.cs`, `WorldPickup.cs`: повторное взаимодействие с видимыми логовищами на карте.
+- `ContentAvailabilityRepair.cs`, `EvolutionFallbackBuilder.cs`, `NestFallbackBuilder.cs`:
+  автоматическое исправление доступности, недостающие формы II/III и логовища базовых видов.
+- `SpriteDatabase.cs`: единая точка назначения и замены всей игровой 2D-графики.
+- `CreatureBaseTemplate.cs`, `CreatureVisualValidator.cs`: единый формат существ,
+  автоматические якоря гардероба и debug-проверка спрайтов/ссылок.
 - `BiomeEventSystem.cs`, `FavoriteHelperSystem.cs`: временные события и пассивная помощь любимчика.
 - `AchievementSystem.cs`: проверка и сохранение достижений.
+- `AudioManager.cs`, `DailyRewardSystem.cs`, `GameplayHintSystem.cs`: настройки звука,
+  ежедневный цикл наград и контекстные подсказки.
+- `ContentValidator.cs`, `EncyclopediaAvailabilityCheck.cs`, `ReleaseReadinessCheck.cs`,
+  `BetaReadinessCheck.cs`:
+  не блокирующая проверка контента, достижимости существ и
+  итоговая диагностика релизной и Beta-готовности.
 - `SaveSystem.cs`: сериализация PlayerPrefs.
 - `EncyclopediaUI.cs`, `BiomeUI.cs`, `UIManager.cs`: интерфейс.
 - `PetUpgradeSystem.cs`, `BreedingSystem.cs`, `QuestSystem.cs`: уровни, эволюция и квесты.
 - `MonstrologyBootstrap.cs`: самозапуск и демо-контент.
 - `YandexGamesBridge.cs`: точка интеграции Яндекс Игр.
+
+В Play Mode итоговую проверку можно запустить через
+`Tools > Monstrology > Run Release Readiness Check`. Успешный результат пишет в Console
+маркер `MONSTROLOGY_RELEASE_READINESS_PASS`.
+
+Отдельная команда `Tools > Monstrology > Run Encyclopedia Availability Check` проверяет
+реальные маршруты получения каждого существа. Успех отмечается маркером
+`MONSTROLOGY_ENCYCLOPEDIA_AVAILABILITY_PASS`.
+
+Полный Beta-аудит запускается в Play Mode через
+`Tools > Monstrology > Run Beta Readiness Check`. Он проверяет монстров, биомы,
+логовища, достижения, эволюции, гардероб, энергию, деньги, энциклопедию и любимчика.
+Успешный отчёт заканчивается маркером `MONSTROLOGY_BETA_READINESS_PASS`.
+
+Отдельная проверка визуального стандарта запускается через
+`Tools > Monstrology > Validate Creature Template` или одноимённый `ContextMenu`
+компонента `CreatureVisualValidator`. Успех отмечается маркером
+`CREATURE_TEMPLATE_VALIDATION_PASS`.

@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 697d926b240b46a7a6fce67434f2c355, type: 3}
+  m_Name: CreatureBaseTemplate
+  m_EditorClassIdentifier:
+  canvasSize: {x: 2048, y: 2048}
+  safeMargin: 0.1
+  headHeight: 0.4
+  bodyHeight: 0.4
+  legsHeight: 0.2
+  headAnchor: {x: 0.5, y: 0.76}
+  bodyAnchor: {x: 0.5, y: 0.43}
+  legAnchor: {x: 0.5, y: 0.16}
+  headAccessorySize: {x: 0.72, y: 0.32}
+  bodyAccessorySize: {x: 0.76, y: 0.46}
+  legAccessorySize: {x: 0.68, y: 0.24}

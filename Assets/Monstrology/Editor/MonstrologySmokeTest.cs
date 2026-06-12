@@ -2,6 +2,7 @@
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Linq;
 
 namespace Monstrology.Editor
 {
@@ -104,6 +105,18 @@ namespace Monstrology.Editor
                     CreatureNestSystem creatureNests = Object.FindObjectOfType<CreatureNestSystem>();
                     BiomeEventSystem biomeEvents = Object.FindObjectOfType<BiomeEventSystem>();
                     FavoriteHelperSystem favoriteHelper = Object.FindObjectOfType<FavoriteHelperSystem>();
+                    AudioManager audioManager = Object.FindObjectOfType<AudioManager>();
+                    DailyRewardSystem dailyRewards = Object.FindObjectOfType<DailyRewardSystem>();
+                    GameplayHintSystem hints = Object.FindObjectOfType<GameplayHintSystem>();
+                    ReleaseReadinessCheck readiness =
+                        Object.FindObjectOfType<ReleaseReadinessCheck>();
+                    BetaReadinessCheck betaReadiness =
+                        Object.FindObjectOfType<BetaReadinessCheck>();
+                    CreatureVisualValidator creatureVisualValidator =
+                        Object.FindObjectOfType<CreatureVisualValidator>();
+                    EncyclopediaAvailabilityCheck encyclopediaCheck =
+                        Object.FindObjectOfType<EncyclopediaAvailabilityCheck>();
+                    NestPanel nestPanel = Object.FindObjectOfType<NestPanel>(true);
                     FollowPetController followPet = Object.FindObjectOfType<FollowPetController>();
                     WardrobePanel wardrobePanel = Object.FindObjectOfType<WardrobePanel>(true);
                     BreedingPanel breedingPanel = Object.FindObjectOfType<BreedingPanel>(true);
@@ -120,6 +133,10 @@ namespace Monstrology.Editor
                         achievements == null || energyRegeneration == null ||
                         starterBoost == null || signatureSets == null || creatureNests == null ||
                         biomeEvents == null || favoriteHelper == null ||
+                        audioManager == null || dailyRewards == null || hints == null ||
+                        readiness == null || betaReadiness == null ||
+                        creatureVisualValidator == null ||
+                        encyclopediaCheck == null || nestPanel == null ||
                         followPet == null || wardrobePanel == null ||
                         breedingPanel == null || achievementPanel == null || trackChains == null)
                     {
@@ -146,6 +163,15 @@ namespace Monstrology.Editor
                             ", creatureNests=" + (creatureNests != null) +
                             ", biomeEvents=" + (biomeEvents != null) +
                             ", favoriteHelper=" + (favoriteHelper != null) +
+                            ", audioManager=" + (audioManager != null) +
+                            ", dailyRewards=" + (dailyRewards != null) +
+                            ", hints=" + (hints != null) +
+                            ", readiness=" + (readiness != null) +
+                            ", betaReadiness=" + (betaReadiness != null) +
+                            ", creatureVisualValidator=" +
+                            (creatureVisualValidator != null) +
+                            ", encyclopediaCheck=" + (encyclopediaCheck != null) +
+                            ", nestPanel=" + (nestPanel != null) +
                             ", follower=" + (followPet != null) +
                             ", wardrobePanel=" + (wardrobePanel != null) +
                             ", breedingPanel=" + (breedingPanel != null) +
@@ -162,8 +188,8 @@ namespace Monstrology.Editor
                     }
 
                     if (game.Content.biomes.Count != 6 || game.Content.creatures.Count < 20 ||
-                        game.Content.accessories.Count < 15 ||
-                        game.Content.signatureSets.Count < 3 ||
+                        game.Content.accessories.Count < 24 ||
+                        game.Content.signatureSets.Count < 6 ||
                         game.Content.creatureNests.Count < 5 ||
                         game.Content.biomeEvents.Count < 6 ||
                         game.Content.speciesEvolutions.Count < 7 ||
@@ -172,9 +198,154 @@ namespace Monstrology.Editor
                         throw new System.InvalidOperationException("Runtime demo content is incomplete.");
                     }
 
+                    SpriteDatabase spriteDatabase = SpriteDatabase.Active;
+                    if (spriteDatabase == null ||
+                        Resources.Load<SpriteDatabase>("SpriteDatabase") == null ||
+                        Resources.Load<CreatureBaseTemplate>(
+                            "CreatureBaseTemplate") == null ||
+                        !CreatureBaseTemplate.Active.HasValidStandard() ||
+                        game.Content.creatures.Any(creature =>
+                            spriteDatabase.GetCreaturePortrait(creature) == null ||
+                            spriteDatabase.GetCreatureWorld(creature) == null ||
+                            spriteDatabase.GetCreatureEvolution(creature) == null) ||
+                        game.Content.items.Any(item =>
+                            spriteDatabase.GetItem(item) == null) ||
+                        game.Content.accessories.Any(accessory =>
+                            spriteDatabase.GetAccessory(accessory) == null) ||
+                        game.Content.creatureNests.Any(nest =>
+                            spriteDatabase.GetNest(nest) == null) ||
+                        game.Content.biomeEvents.Any(eventData =>
+                            spriteDatabase.GetSpecialEvent(eventData) == null) ||
+                        game.Content.biomes.Any(biome =>
+                            spriteDatabase.GetBiomeBackground(
+                                biome,
+                                biome != null ? biome.mapData : null) == null) ||
+                        System.Enum.GetValues(typeof(TrackType))
+                            .Cast<TrackType>()
+                            .Any(track => spriteDatabase.GetTrack(track) == null))
+                    {
+                        throw new System.InvalidOperationException(
+                            "SpriteDatabase does not resolve all replaceable artwork.");
+                    }
+
+                    System.Collections.Generic.HashSet<string> evolutionResults =
+                        new System.Collections.Generic.HashSet<string>(
+                            game.Content.speciesEvolutions
+                                .Where(evolution => evolution != null)
+                                .Select(evolution => evolution.resultSpeciesId));
+                    System.Collections.Generic.List<CreatureData> evolutionRoots =
+                        game.Content.creatures.Where(creature =>
+                            creature != null &&
+                            !evolutionResults.Contains(creature.id)).ToList();
+                    foreach (CreatureData root in evolutionRoots)
+                    {
+                        int forms = 1;
+                        string currentSpeciesId = root.id;
+                        System.Collections.Generic.HashSet<string> visited =
+                            new System.Collections.Generic.HashSet<string>();
+                        while (visited.Add(currentSpeciesId))
+                        {
+                            SpeciesEvolutionData next =
+                                game.GetEvolution(currentSpeciesId);
+                            if (next == null ||
+                                string.IsNullOrEmpty(next.resultSpeciesId))
+                            {
+                                break;
+                            }
+
+                            forms++;
+                            currentSpeciesId = next.resultSpeciesId;
+                        }
+
+                        if (forms < 3)
+                        {
+                            throw new System.InvalidOperationException(
+                                "Evolution fallback chain is incomplete for " + root.id + ".");
+                        }
+
+                        CreatureNestData nest = game.Content.creatureNests.Find(entry =>
+                            entry != null && entry.speciesId == root.id);
+                        if (nest == null ||
+                            string.IsNullOrEmpty(nest.id) ||
+                            string.IsNullOrEmpty(nest.displayName) ||
+                            string.IsNullOrEmpty(nest.description) ||
+                            nest.rewardCooldownHours <= 0f)
+                        {
+                            throw new System.InvalidOperationException(
+                                "Base species nest is incomplete for " + root.id + ".");
+                        }
+                    }
+
+                    if (game.GetEvolution("bread_cat").requiredCopies != 100 ||
+                        game.GetEvolution("bread_cat_ii").requiredCopies != 250 ||
+                        game.GetEvolution("bread_cat_iii").requiredCopies != 500 ||
+                        exploration.SelectCreature(new[]
+                        {
+                            game.GetCreature("bread_cat_ii")
+                        }) != null ||
+                        ContentValidator.ValidateEncyclopediaAvailability(game.Content) != 0)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Evolution copy requirements or encyclopedia availability are invalid.");
+                    }
+
+                    if (game.Content.creatureNests.Count < evolutionRoots.Count)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Not every base species has a creature nest.");
+                    }
+
+                    if (game.GetBiome(BiomeType.Forest).unlockPrice != 0 ||
+                        game.GetBiome(BiomeType.Desert).unlockPrice != 300 ||
+                        game.GetBiome(BiomeType.Tundra).unlockPrice != 1000 ||
+                        game.GetBiome(BiomeType.Volcano).unlockPrice != 3000 ||
+                        game.GetBiome(BiomeType.Ocean).unlockPrice != 8000 ||
+                        game.GetBiome(BiomeType.Space).unlockPrice != 20000 ||
+                        !WorldExplorationManager.ReleaseDropChancesAreValid)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Biome prices or release drop balance is invalid.");
+                    }
+
                     if (world.LoadedBiome != game.CurrentBiome || world.ActivePickupCount == 0)
                     {
                         throw new System.InvalidOperationException("World map or findings were not initialized.");
+                    }
+
+                    if (WorldPickup.ActivePickups.Any(pickup =>
+                            pickup == null ||
+                            pickup.VisualRenderer == null ||
+                            pickup.VisualRenderer.transform == pickup.transform) ||
+                        world.NavigationGuide.GetComponent<SpriteRenderer>() != null ||
+                        world.NavigationGuide.GetComponentInChildren<SpriteRenderer>() == null ||
+                        player.GetComponent<SpriteRenderer>() != null ||
+                        player.GetComponentInChildren<SpriteRenderer>() == null)
+                    {
+                        throw new System.InvalidOperationException(
+                            "World visuals are not isolated in child SpriteRenderer objects.");
+                    }
+
+                    CreatureVisualRig followerVisual =
+                        Object.FindObjectsOfType<CreatureVisualRig>(true)
+                            .FirstOrDefault(rig =>
+                                rig != null && rig.name == "FavoritePetFollower");
+                    if (followerVisual == null)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Favorite pet does not use CreatureVisualRig.");
+                    }
+
+                    followerVisual.EnsureStructure();
+                    if (!followerVisual.HasValidStructure() ||
+                        followerVisual.HeadAnchor == null ||
+                        followerVisual.BodyAnchor == null ||
+                        followerVisual.LegAnchor == null ||
+                        followerVisual.CreatureRenderer == null ||
+                        followerVisual.CreatureRenderer.transform ==
+                            followerVisual.transform)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Creature visual anchors or renderer are incomplete.");
                     }
 
                     if (world.InfiniteMap == null || world.InfiniteMap.PooledTileCount != 9 ||
@@ -207,10 +378,62 @@ namespace Monstrology.Editor
                             "Signature set content is incomplete.");
                     }
 
+                    AccessoryData astroHelmet = game.GetAccessory("astro_helmet");
+                    AccessoryData strawHat = game.GetAccessory("straw_hat");
+                    if (!astroHelmet.IsSignature ||
+                        astroHelmet.EffectiveSetId != "astronaut_set" ||
+                        !ExplorationSystem.CanAccessoryDropInBiome(
+                            astroHelmet, BiomeType.Space) ||
+                        ExplorationSystem.CanAccessoryDropInBiome(
+                            astroHelmet, BiomeType.Forest) ||
+                        strawHat == null || strawHat.IsSignature ||
+                        System.Enum.GetValues(typeof(BiomeType))
+                            .Cast<BiomeType>()
+                            .Any(biome =>
+                                !ExplorationSystem.CanAccessoryDropInBiome(
+                                    strawHat, biome)))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Signature clothing biome restrictions are invalid.");
+                    }
+
                     if (world.NavigationGuide.HasTarget || ui.ResultCardVisible)
                     {
                         throw new System.InvalidOperationException(
                             "Compass or discovery result is visible at startup.");
+                    }
+
+                    if (!ui.HasPauseMenu ||
+                        audioManager.MusicVolume < 0f || audioManager.MusicVolume > 1f ||
+                        audioManager.SfxVolume < 0f || audioManager.SfxVolume > 1f ||
+                        dailyRewards.NextRewardDay < 1 || dailyRewards.NextRewardDay > 7)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Pause, audio settings or daily rewards were not initialized.");
+                    }
+
+                    if (SaveSystem.DefaultCoins < 50 ||
+                        SaveSystem.DefaultCoins > 100 ||
+                        SaveSystem.DefaultEnergy + 25 !=
+                            EnergyRegenerationSystem.MaxEnergy ||
+                        GameManager.CalculateHintCost(CreatureRarity.Common, 1) != 50 ||
+                        GameManager.CalculateHintCost(CreatureRarity.Common, 2) != 150 ||
+                        GameManager.CalculateHintCost(CreatureRarity.Common, 3) != 400 ||
+                        GameManager.CalculateHintCost(CreatureRarity.Common, 4) != 1000 ||
+                        GameManager.CalculateHintCost(CreatureRarity.Common, 5) != 2500 ||
+                        GameManager.CalculateHintCost(CreatureRarity.Common, 6) != 5000 ||
+                        GameManager.CalculateHintCost(CreatureRarity.Legendary, 1) <= 50)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Starting resources or progressive hint prices are invalid.");
+                    }
+
+                    RectTransform bottomBar = canvas.GetComponentsInChildren<RectTransform>(true)
+                        .FirstOrDefault(rect => rect.name == "BottomBar");
+                    if (bottomBar == null || bottomBar.Find("ДОСТИЖЕНИЯ") != null)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Achievements are still exposed in the main HUD.");
                     }
 
                     if (game.Energy < WorldExplorationManager.ExplorerCompassEnergyCost)
@@ -266,7 +489,16 @@ namespace Monstrology.Editor
                             selectedCard.GetComponent<HorizontalLayoutGroup>() == null ||
                             selectedCard.Find("PortraitColumn") == null ||
                             selectedCard.Find("InfoColumn") == null ||
-                            selectedCard.Find("ActionsColumn") == null)
+                            selectedCard.Find("ActionsColumn") == null ||
+                            selectedCard.Find(
+                                "PortraitColumn/Portrait/EquippedAccessories/HeadAnchor") ==
+                            null ||
+                            selectedCard.Find(
+                                "PortraitColumn/Portrait/EquippedAccessories/BodyAnchor") ==
+                            null ||
+                            selectedCard.Find(
+                                "PortraitColumn/Portrait/EquippedAccessories/LegAnchor") ==
+                            null)
                         {
                             throw new System.InvalidOperationException(
                                 "Selected pet card does not use the three-column layout.");
@@ -274,6 +506,23 @@ namespace Monstrology.Editor
 
                         ui.CloseAllPanels();
                     }
+
+                    ui.OpenBreeding();
+                    Dropdown evolutionDropdown =
+                        breedingPanel.GetComponentInChildren<Dropdown>(true);
+                    int expectedEvolutionSpecies = game.Content.creatures.Count(creature =>
+                        creature != null &&
+                        (game.IsCreatureFound(creature.id) ||
+                         petCollection.GetPetBySpecies(creature.id) != null));
+                    if (expectedEvolutionSpecies > 0 &&
+                        (evolutionDropdown == null ||
+                         evolutionDropdown.options.Count != expectedEvolutionSpecies))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Evolution dropdown does not contain all discovered species.");
+                    }
+
+                    ui.CloseAllPanels();
 
                     System.Collections.Generic.HashSet<string> uniqueSpecies =
                         new System.Collections.Generic.HashSet<string>();
@@ -286,12 +535,140 @@ namespace Monstrology.Editor
                         }
                     }
 
-                    if (achievements.GetDefinitions().Count < 10 ||
+                    if (achievements.GetDefinitions().Count < 12 ||
+                        achievements.GetDefinitions().Any(definition =>
+                            definition == null ||
+                            string.IsNullOrEmpty(definition.id) ||
+                            string.IsNullOrEmpty(definition.title) ||
+                            string.IsNullOrEmpty(definition.description) ||
+                            string.IsNullOrEmpty(definition.condition) ||
+                            string.IsNullOrEmpty(definition.reward) ||
+                            definition.coinReward <= 0) ||
                         game.GetCreature("cosmo_cat").allowedTimes.Count == 0 ||
                         game.GetCreature("astro_fox").allowedWeather.Count == 0)
                     {
                         throw new System.InvalidOperationException(
                             "Achievements, time restrictions or weather restrictions are incomplete.");
+                    }
+
+                    foreach (RectTransform rect in
+                             canvas.GetComponentsInChildren<RectTransform>(true))
+                    {
+                        if ((rect.name == "IntroPanel" || rect.name == "DailyRewardPanel") &&
+                            rect.gameObject.activeSelf)
+                        {
+                            rect.gameObject.SetActive(false);
+                        }
+                    }
+
+                    ui.CloseAllPanels();
+
+                    ui.OpenBiomes();
+                    RectTransform forestBiomeRow =
+                        canvas.GetComponentsInChildren<RectTransform>(true)
+                            .FirstOrDefault(rect => rect.name == BiomeType.Forest.ToString());
+                    Text visibleBiomeProgress = forestBiomeRow != null &&
+                                                forestBiomeRow.Find("MainProgress") != null
+                        ? forestBiomeRow.Find("MainProgress").GetComponent<Text>()
+                        : null;
+                    if (visibleBiomeProgress == null ||
+                        !visibleBiomeProgress.text.Contains(" / "))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Biome progress is not displayed prominently.");
+                    }
+
+                    ui.CloseAllPanels();
+
+                    if (!game.SetCurrentBiome(BiomeType.Forest))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest could not be selected for the nest smoke test.");
+                    }
+
+                    CreatureNestProgress forestNest;
+                    creatureNests.Discover("bread_cat", out forestNest);
+                    if (forestNest == null)
+                    {
+                        throw new System.InvalidOperationException(
+                            "A forest nest could not be discovered.");
+                    }
+
+                    world.ReloadCurrentBiome();
+                    WorldPickup nestMarker = Object.FindObjectsOfType<WorldPickup>(true)
+                        .FirstOrDefault(pickup =>
+                            pickup != null &&
+                            pickup.NestId == forestNest.nestId &&
+                            pickup.IsPersistent);
+                    if (nestMarker == null || world.PersistentNestCount <= 0)
+                    {
+                        throw new System.InvalidOperationException(
+                            "A discovered nest was not restored as a persistent map marker.");
+                    }
+
+                    nestMarker.Interact();
+                    if (!ui.NestPanelVisible || !nestMarker.CanInteract ||
+                        !nestMarker.gameObject.activeSelf)
+                    {
+                        throw new System.InvalidOperationException(
+                            "The nest panel did not open or the map marker was consumed.");
+                    }
+
+                    Text nestTimer = nestPanel.GetComponentsInChildren<Text>(true)
+                        .FirstOrDefault(text =>
+                            text != null &&
+                            text.text.Contains("До следующей награды"));
+                    Text nestDescription = nestPanel.GetComponentsInChildren<Text>(true)
+                        .FirstOrDefault(text =>
+                            text != null &&
+                            text.text.Contains("Здесь часто встречаются"));
+                    if (nestTimer == null || nestDescription == null)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Nest panel does not show its description and reward timer.");
+                    }
+
+                    ui.CloseAllPanels();
+                    ui.TogglePause();
+                    if (!ui.IsPaused || Time.timeScale != 0f || player.MovementEnabled)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Pause menu did not stop time and player movement.");
+                    }
+
+                    ui.TogglePause();
+                    if (ui.IsPaused || Time.timeScale <= 0f || !player.MovementEnabled)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Pause menu did not resume the game.");
+                    }
+
+                    if (!readiness.RunReleaseReadinessCheck())
+                    {
+                        throw new System.InvalidOperationException(
+                            "Release readiness check failed.");
+                    }
+
+                    if (!creatureVisualValidator.ValidateCreatureTemplate() ||
+                        string.IsNullOrEmpty(creatureVisualValidator.LastReport) ||
+                        !creatureVisualValidator.LastReport.Contains(
+                            "CREATURE_TEMPLATE_VALIDATION_PASS"))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Creature visual template validation failed.");
+                    }
+
+                    if (!betaReadiness.RunBetaReadinessCheck() ||
+                        string.IsNullOrEmpty(betaReadiness.LastReport) ||
+                        !betaReadiness.LastReport.Contains("Монстры") ||
+                        !betaReadiness.LastReport.Contains("Эволюции") ||
+                        !betaReadiness.LastReport.Contains("Гардероб") ||
+                        !betaReadiness.LastReport.Contains("Шаблон существ") ||
+                        !betaReadiness.LastReport.Contains(
+                            "MONSTROLOGY_BETA_READINESS_PASS"))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Beta readiness report failed or is incomplete.");
                     }
 
                     ItemData fireStone = game.GetItem("fire_stone");

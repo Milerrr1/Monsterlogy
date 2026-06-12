@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1ff50c3fe0cc040b5ab6ee96860af6, type: 3}
+  m_Name: SpriteDatabase
+  m_EditorClassIdentifier:
+  creatureVisuals: []
+  creatures: []
+  items: []
+  accessories: []
+  nests: []
+  specialEvents: []
+  biomes: []
+  tracks: []
+  player: {fileID: 0}
+  creatureFallback: {fileID: 0}
+  unknownCreature: {fileID: 0}
+  itemFallback: {fileID: 0}
+  accessoryFallback: {fileID: 0}
+  nestFallback: {fileID: 0}
+  eggFallback: {fileID: 0}
+  specialEventFallback: {fileID: 0}
+  emptyFinding: {fileID: 0}
+  compassArrow: {fileID: 0}
+  signatureSetEffect: {fileID: 0}
+  biomeFallback: {fileID: 0}
+  primaryDecorationFallback: {fileID: 0}
+  secondaryDecorationFallback: {fileID: 0}
+  roundedPanel: {fileID: 0}
+  joystickBase: {fileID: 0}
+  joystickHandle: {fileID: 0}

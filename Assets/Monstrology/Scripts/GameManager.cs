@@ -53,6 +53,9 @@ namespace Monstrology
         public int ExplorationCount { get { return progress.explorationCount; } }
         public int MutationCount { get { return progress.mutationCount; } }
         public int TotalCreaturesFound { get { return progress.totalCreaturesFound; } }
+        public bool IntroCompleted { get { return progress.introCompleted; } }
+        public string LastDailyRewardUtcDate { get { return progress.lastDailyRewardUtcDate; } }
+        public int DailyRewardStreak { get { return Mathf.Clamp(progress.dailyRewardStreak, 0, 7); } }
         public TimeOfDay CurrentTimeOfDay { get { return ParseTimeOfDay(progress.timeOfDay); } }
         public WeatherType CurrentWeather { get { return ParseWeather(progress.weather); } }
         public float WorldTime01 { get { return Mathf.Repeat(progress.worldTime01, 1f); } }
@@ -169,6 +172,35 @@ namespace Monstrology
         public void AddCoins(int amount)
         {
             progress.coins = Mathf.Max(0, progress.coins + amount);
+            Save();
+        }
+
+        public bool CompleteIntro(int energyReward, int coinReward)
+        {
+            if (progress.introCompleted)
+            {
+                return false;
+            }
+
+            progress.introCompleted = true;
+            progress.energy = Mathf.Clamp(
+                progress.energy + Mathf.Max(0, energyReward),
+                0,
+                EnergyRegenerationSystem.MaxEnergy);
+            progress.coins = Mathf.Max(0, progress.coins + Mathf.Max(0, coinReward));
+            Save();
+            return true;
+        }
+
+        public void SaveDailyReward(string utcDate, int streakDay)
+        {
+            progress.lastDailyRewardUtcDate = utcDate ?? string.Empty;
+            progress.dailyRewardStreak = Mathf.Clamp(streakDay, 0, 7);
+            Save();
+        }
+
+        public void SaveNow()
+        {
             Save();
         }
 
@@ -427,6 +459,27 @@ namespace Monstrology
             return total > 0 && GetBiomeCreatureFound(biome) >= total;
         }
 
+        public int GetUnlockedBiomeCount()
+        {
+            return content.biomes.Count(biome =>
+                biome != null && IsBiomeUnlocked(biome.type));
+        }
+
+        public int GetDiscoveredSpeciesCount()
+        {
+            return content.creatures.Count(creature =>
+                creature != null && IsCreatureFound(creature.id));
+        }
+
+        public float GetEncyclopediaCompletion01()
+        {
+            int total = content.creatures.Count(creature =>
+                creature != null && !string.IsNullOrEmpty(creature.id));
+            return total > 0
+                ? Mathf.Clamp01((float)GetDiscoveredSpeciesCount() / total)
+                : 0f;
+        }
+
         public CreatureData GetCreature(string id)
         {
             return content.creatures.Find(creature => creature != null && creature.id == id);
@@ -599,16 +652,79 @@ namespace Monstrology
 
         public bool IsHintPurchased(string creatureId)
         {
-            return progress.purchasedHints.Contains(creatureId);
+            return GetHintLevel(creatureId) > 0;
         }
 
         public bool TryBuyHint(string creatureId, int price)
         {
-            if (IsHintPurchased(creatureId))
+            return TryBuyNextHint(creatureId);
+        }
+
+        public int GetHintLevel(string creatureId)
+        {
+            StringIntEntry entry = progress.hintLevels.Find(item =>
+                item != null && item.id == creatureId);
+            return entry != null ? Mathf.Clamp(entry.value, 0, 4) : 0;
+        }
+
+        public int GetPurchasedHintCount()
+        {
+            return progress.hintLevels.Sum(entry =>
+                entry != null ? Mathf.Clamp(entry.value, 0, 4) : 0);
+        }
+
+        public int GetNextHintCost(CreatureData creature)
+        {
+            return creature == null
+                ? 0
+                : CalculateHintCost(
+                    creature.rarity,
+                    GetPurchasedHintCount() + 1);
+        }
+
+        public static int CalculateHintCost(
+            CreatureRarity rarity,
+            int purchaseNumber)
+        {
+            int[] baseCosts = { 50, 150, 400, 1000, 2500, 5000 };
+            int index = Mathf.Max(1, purchaseNumber) - 1;
+            int baseCost = index < baseCosts.Length
+                ? baseCosts[index]
+                : baseCosts[baseCosts.Length - 1] +
+                  (index - baseCosts.Length + 1) * 1500;
+            float rarityMultiplier;
+            switch (rarity)
             {
-                return true;
+                case CreatureRarity.Rare:
+                    rarityMultiplier = 1.25f;
+                    break;
+                case CreatureRarity.Epic:
+                    rarityMultiplier = 1.5f;
+                    break;
+                case CreatureRarity.Legendary:
+                    rarityMultiplier = 2f;
+                    break;
+                case CreatureRarity.Secret:
+                    rarityMultiplier = 2.5f;
+                    break;
+                default:
+                    rarityMultiplier = 1f;
+                    break;
             }
 
+            return Mathf.CeilToInt(baseCost * rarityMultiplier / 10f) * 10;
+        }
+
+        public bool TryBuyNextHint(string creatureId)
+        {
+            CreatureData creature = GetCreature(creatureId);
+            int level = GetHintLevel(creatureId);
+            if (creature == null || level >= 4)
+            {
+                return false;
+            }
+
+            int price = GetNextHintCost(creature);
             if (progress.coins < price)
             {
                 RaiseNotification("Недостаточно монет для подсказки.");
@@ -616,8 +732,24 @@ namespace Monstrology
             }
 
             progress.coins -= price;
-            progress.purchasedHints.Add(creatureId);
+            StringIntEntry entry = progress.hintLevels.Find(item =>
+                item != null && item.id == creatureId);
+            if (entry == null)
+            {
+                entry = new StringIntEntry(creatureId, 0);
+                progress.hintLevels.Add(entry);
+            }
+
+            entry.value = Mathf.Clamp(level + 1, 0, 4);
+            if (!progress.purchasedHints.Contains(creatureId))
+            {
+                progress.purchasedHints.Add(creatureId);
+            }
+
             Save();
+            RaiseNotification(
+                "Открыт уровень подсказки " + entry.value + "/4 за " +
+                price + " монет.");
             return true;
         }
 
@@ -735,6 +867,16 @@ namespace Monstrology
 
         private void EnsureProgressDefaults()
         {
+            int loadedVersion = progress.version;
+            bool hasExistingProgress = loadedVersion > 0 ||
+                                       progress.explorationCount > 0 ||
+                                       progress.totalCreaturesFound > 0 ||
+                                       (progress.pets != null && progress.pets.Count > 0);
+            if (loadedVersion < 7 && hasExistingProgress)
+            {
+                progress.introCompleted = true;
+            }
+
             if (progress.unlockedBiomes == null)
             {
                 progress.unlockedBiomes = new List<string>();
@@ -751,6 +893,27 @@ namespace Monstrology
             progress.tracks = progress.tracks ?? new List<StringIntEntry>();
             progress.claimedQuests = progress.claimedQuests ?? new List<string>();
             progress.purchasedHints = progress.purchasedHints ?? new List<string>();
+            progress.hintLevels = progress.hintLevels ?? new List<StringIntEntry>();
+            foreach (string creatureId in progress.purchasedHints)
+            {
+                if (!string.IsNullOrEmpty(creatureId) &&
+                    !progress.hintLevels.Exists(entry =>
+                        entry != null && entry.id == creatureId))
+                {
+                    progress.hintLevels.Add(new StringIntEntry(creatureId, 1));
+                }
+            }
+
+            progress.hintLevels.RemoveAll(entry =>
+                entry == null || string.IsNullOrEmpty(entry.id));
+            foreach (StringIntEntry hint in progress.hintLevels)
+            {
+                hint.value = Mathf.Clamp(hint.value, 0, 4);
+                if (hint.value > 0 && !progress.purchasedHints.Contains(hint.id))
+                {
+                    progress.purchasedHints.Add(hint.id);
+                }
+            }
             progress.pets = progress.pets ?? new List<CreatureInstance>();
             progress.accessories = progress.accessories ?? new List<string>();
             progress.unlockedAchievements = progress.unlockedAchievements ?? new List<string>();
@@ -760,6 +923,8 @@ namespace Monstrology
             progress.activeSignatureBonuses =
                 progress.activeSignatureBonuses ?? new List<string>();
             progress.foundBiomeEvents = progress.foundBiomeEvents ?? new List<string>();
+            progress.lastDailyRewardUtcDate = progress.lastDailyRewardUtcDate ?? string.Empty;
+            progress.dailyRewardStreak = Mathf.Clamp(progress.dailyRewardStreak, 0, 7);
             string now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             progress.lastEnergyUtc = string.IsNullOrEmpty(progress.lastEnergyUtc)
                 ? now
@@ -782,7 +947,7 @@ namespace Monstrology
                 : progress.weather;
             progress.worldTime01 = Mathf.Repeat(progress.worldTime01, 1f);
             progress.weatherTimer = Mathf.Max(0f, progress.weatherTimer);
-            progress.version = Mathf.Max(progress.version, 6);
+            progress.version = Mathf.Max(progress.version, 8);
         }
 
         private void EnsureContentDefaults()

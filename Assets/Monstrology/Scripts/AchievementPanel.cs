@@ -37,14 +37,16 @@ namespace Monstrology
                     content,
                     unlocked ? new Color(0.12f, 0.24f, 0.17f) : new Color(0.09f, 0.11f, 0.16f));
                 UIFactory.ApplyRounded(row);
-                UIFactory.SetLayoutHeight(row.gameObject, 78f);
+                UIFactory.SetLayoutHeight(row.gameObject, 108f);
 
                 Text text = UIFactory.Text(
                     "Text",
                     row.transform,
                     (unlocked ? "ОТКРЫТО  " : "ЗАКРЫТО  ") + achievement.title +
-                    "\n" + achievement.description,
-                    17,
+                    "\n" + achievement.description +
+                    "\nУсловие: " + achievement.condition +
+                    "\n" + achievement.reward,
+                    14,
                     unlocked ? FontStyle.Bold : FontStyle.Normal,
                     TextAnchor.MiddleLeft);
                 UIFactory.SetOffsets(text.rectTransform, Vector2.zero, Vector2.one,

@@ -35,6 +35,9 @@ namespace Monstrology
         private Vector3 baseScale;
         private int trackChainStage = -1;
         private float expiresAt;
+        private bool persistent;
+        private string nestId;
+        private TextMesh worldLabel;
 
         public static IEnumerable<WorldPickup> ActivePickups { get { return Active; } }
         public WorldPickupType PickupType { get { return pickupType; } }
@@ -45,6 +48,9 @@ namespace Monstrology
         public TrackType TrackType { get { return trackType; } }
         public int TrackChainStage { get { return trackChainStage; } }
         public BiomeEventData BiomeEvent { get { return biomeEvent; } }
+        public bool IsPersistent { get { return persistent; } }
+        public string NestId { get { return nestId; } }
+        public SpriteRenderer VisualRenderer { get { return visual; } }
 
         public string DisplayName
         {
@@ -63,7 +69,9 @@ namespace Monstrology
                     case WorldPickupType.Accessory:
                         return accessory != null ? accessory.displayName : "подобрать одежду";
                     case WorldPickupType.CreatureNest:
-                        return creature != null ? "исследовать логово " + creature.creatureName : "исследовать логово";
+                        return creature != null
+                            ? "осмотреть логово " + creature.creatureName
+                            : "осмотреть логово";
                     case WorldPickupType.SpecialEvent:
                         return biomeEvent != null
                             ? "исследовать " + biomeEvent.specialObjectName
@@ -168,6 +176,8 @@ namespace Monstrology
             if (pickupType == WorldPickupType.CreatureNest && owner != null)
             {
                 owner.ResolveCreatureNest(this);
+                collected = false;
+                return;
             }
             else if (pickupType == WorldPickupType.SpecialEvent && owner != null)
             {
@@ -193,11 +203,54 @@ namespace Monstrology
             Destroy(gameObject);
         }
 
+        public void ConfigureNestMarker(string configuredNestId, bool makePersistent)
+        {
+            nestId = configuredNestId ?? string.Empty;
+            persistent = makePersistent;
+            if (persistent)
+            {
+                expiresAt = 0f;
+                if (spawnPoint != null)
+                {
+                    spawnPoint.Release(this);
+                    spawnPoint = null;
+                }
+            }
+
+            gameObject.name = string.IsNullOrEmpty(nestId)
+                ? "CreatureNest"
+                : "Nest_" + nestId;
+            BuildNestDecoration();
+        }
+
         private void RefreshVisual()
         {
-            if (visual == null)
+            if (visual == null || visual.transform == transform)
             {
-                visual = gameObject.AddComponent<SpriteRenderer>();
+                SpriteRenderer previous = visual;
+                GameObject visualObject = new GameObject("Visual");
+                visualObject.transform.SetParent(transform, false);
+                visual = visualObject.AddComponent<SpriteRenderer>();
+                if (previous != null)
+                {
+                    visual.sprite = previous.sprite;
+                    visual.color = previous.color;
+                    visual.sharedMaterial = previous.sharedMaterial;
+                    Destroy(previous);
+                }
+            }
+
+            if (pickupType == WorldPickupType.Creature)
+            {
+                CreatureVisualRig rig = GetComponent<CreatureVisualRig>();
+                if (rig == null)
+                {
+                    rig = gameObject.AddComponent<CreatureVisualRig>();
+                }
+
+                rig.ApplyCreature(creature, GetColor(), 10);
+                visual = rig.CreatureRenderer;
+                return;
             }
 
             visual.sortingOrder = 10;
@@ -205,47 +258,73 @@ namespace Monstrology
             visual.color = GetColor();
         }
 
+        private void BuildNestDecoration()
+        {
+            if (pickupType != WorldPickupType.CreatureNest)
+            {
+                return;
+            }
+
+            Transform creatureMarker = transform.Find("LinkedCreature");
+            if (creatureMarker == null)
+            {
+                GameObject markerObject = new GameObject("LinkedCreature");
+                markerObject.transform.SetParent(transform, false);
+                markerObject.transform.localPosition = new Vector3(0f, 0.18f, 0f);
+                markerObject.transform.localScale = Vector3.one * 0.56f;
+                CreatureVisualRig markerRig =
+                    markerObject.AddComponent<CreatureVisualRig>();
+                markerRig.ApplyCreature(
+                    creature,
+                    new Color(1f, 0.68f, 0.3f),
+                    11);
+            }
+
+            if (worldLabel == null)
+            {
+                GameObject labelObject = new GameObject("NestName");
+                labelObject.transform.SetParent(transform, false);
+                labelObject.transform.localPosition = new Vector3(0f, 1.05f, 0f);
+                labelObject.transform.localScale = Vector3.one * 0.08f;
+                worldLabel = labelObject.AddComponent<TextMesh>();
+                worldLabel.anchor = TextAnchor.MiddleCenter;
+                worldLabel.alignment = TextAlignment.Center;
+                worldLabel.fontSize = 32;
+                worldLabel.characterSize = 1f;
+                worldLabel.color = new Color(1f, 0.88f, 0.58f);
+                MeshRenderer renderer = labelObject.GetComponent<MeshRenderer>();
+                if (renderer != null)
+                {
+                    renderer.sortingOrder = 12;
+                }
+            }
+
+            worldLabel.text = creature != null
+                ? "Логово " + creature.creatureName
+                : "Логово";
+        }
+
         private Sprite GetSprite()
         {
-            if (pickupType == WorldPickupType.Creature && creature != null && creature.icon != null)
-            {
-                return creature.icon;
-            }
-
-            if ((pickupType == WorldPickupType.Item || pickupType == WorldPickupType.Egg) &&
-                item != null && item.icon != null)
-            {
-                return item.icon;
-            }
-
-            if (pickupType == WorldPickupType.Accessory && accessory != null && accessory.icon != null)
-            {
-                return accessory.icon;
-            }
-
-            if (pickupType == WorldPickupType.CreatureNest && creature != null && creature.icon != null)
-            {
-                return creature.icon;
-            }
-
             switch (pickupType)
             {
                 case WorldPickupType.Creature:
-                    return WorldPlaceholderSprites.Circle;
+                    return SpriteDatabase.Active.GetCreatureWorld(creature);
                 case WorldPickupType.Trace:
-                    return WorldPlaceholderSprites.Diamond;
+                    return SpriteDatabase.Active.GetTrack(trackType);
+                case WorldPickupType.Item:
                 case WorldPickupType.Egg:
-                    return WorldPlaceholderSprites.Egg;
+                    return SpriteDatabase.Active.GetItem(item);
                 case WorldPickupType.Accessory:
-                    return WorldPlaceholderSprites.Square;
+                    return SpriteDatabase.Active.GetAccessory(accessory);
                 case WorldPickupType.CreatureNest:
-                    return WorldPlaceholderSprites.Ring;
+                    return SpriteDatabase.Active.GetNest(GetNestData());
                 case WorldPickupType.SpecialEvent:
-                    return WorldPlaceholderSprites.Diamond;
+                    return SpriteDatabase.Active.GetSpecialEvent(biomeEvent);
                 case WorldPickupType.Nothing:
-                    return WorldPlaceholderSprites.Ring;
+                    return SpriteDatabase.Active.GetEmptyFinding();
                 default:
-                    return WorldPlaceholderSprites.Square;
+                    return SpriteDatabase.Active.GetItem(item);
             }
         }
 
@@ -254,32 +333,46 @@ namespace Monstrology
             switch (pickupType)
             {
                 case WorldPickupType.Creature:
-                    return creature != null && creature.icon != null
+                    return SpriteDatabase.Active.HasCreatureArtwork(creature)
                         ? Color.white
                         : new Color(0.96f, 0.55f, 0.48f);
                 case WorldPickupType.Trace:
                     return new Color(1f, 0.82f, 0.34f);
                 case WorldPickupType.Item:
-                    return item != null && item.icon != null
+                    return SpriteDatabase.Active.HasItemArtwork(item)
                         ? Color.white
                         : new Color(0.38f, 0.88f, 0.68f);
                 case WorldPickupType.Egg:
-                    return item != null && item.icon != null
+                    return SpriteDatabase.Active.HasItemArtwork(item)
                         ? Color.white
                         : new Color(0.82f, 0.66f, 1f);
                 case WorldPickupType.Accessory:
-                    return accessory != null && accessory.icon != null
+                    return SpriteDatabase.Active.HasAccessoryArtwork(accessory)
                         ? Color.white
                         : accessory != null
                             ? PetLocalization.RarityColor(accessory.rarity)
                             : new Color(0.96f, 0.72f, 0.3f);
                 case WorldPickupType.CreatureNest:
-                    return new Color(0.75f, 0.52f, 0.28f);
+                    return SpriteDatabase.Active.HasNestArtwork(GetNestData())
+                        ? Color.white
+                        : new Color(0.75f, 0.52f, 0.28f);
                 case WorldPickupType.SpecialEvent:
-                    return new Color(0.95f, 0.42f, 0.82f);
+                    return SpriteDatabase.Active.HasSpecialEventArtwork(biomeEvent)
+                        ? Color.white
+                        : new Color(0.95f, 0.42f, 0.82f);
                 default:
                     return new Color(0.72f, 0.76f, 0.84f);
             }
+        }
+
+        private CreatureNestData GetNestData()
+        {
+            return GameManager.Instance != null && GameManager.Instance.Content != null
+                ? GameManager.Instance.Content.creatureNests.Find(data =>
+                    data != null &&
+                    ((!string.IsNullOrEmpty(nestId) && data.id == nestId) ||
+                     (creature != null && data.speciesId == creature.id)))
+                : null;
         }
 
         private static ExplorationResultType ConvertType(WorldPickupType type)
@@ -302,93 +395,4 @@ namespace Monstrology
         }
     }
 
-    internal static class WorldPlaceholderSprites
-    {
-        private static Sprite square;
-        private static Sprite circle;
-        private static Sprite diamond;
-        private static Sprite egg;
-        private static Sprite ring;
-        private static Sprite player;
-
-        public static Sprite Square { get { return square ?? (square = Create(Shape.Square)); } }
-        public static Sprite Circle { get { return circle ?? (circle = Create(Shape.Circle)); } }
-        public static Sprite Diamond { get { return diamond ?? (diamond = Create(Shape.Diamond)); } }
-        public static Sprite Egg { get { return egg ?? (egg = Create(Shape.Egg)); } }
-        public static Sprite Ring { get { return ring ?? (ring = Create(Shape.Ring)); } }
-        public static Sprite Player { get { return player ?? (player = Create(Shape.Player)); } }
-
-        private enum Shape
-        {
-            Square,
-            Circle,
-            Diamond,
-            Egg,
-            Ring,
-            Player
-        }
-
-        private static Sprite Create(Shape shape)
-        {
-            const int size = 32;
-            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            texture.name = "Runtime " + shape;
-            texture.hideFlags = HideFlags.DontSave;
-            texture.filterMode = FilterMode.Point;
-
-            Color[] pixels = new Color[size * size];
-            Color clear = new Color(0f, 0f, 0f, 0f);
-            for (int index = 0; index < pixels.Length; index++)
-            {
-                pixels[index] = clear;
-            }
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float nx = (x + 0.5f - size * 0.5f) / (size * 0.5f);
-                    float ny = (y + 0.5f - size * 0.5f) / (size * 0.5f);
-                    bool filled = IsFilled(shape, nx, ny);
-                    if (filled)
-                    {
-                        pixels[y * size + x] = Color.white;
-                    }
-                }
-            }
-
-            texture.SetPixels(pixels);
-            texture.Apply();
-            Sprite sprite = Sprite.Create(
-                texture,
-                new Rect(0f, 0f, size, size),
-                new Vector2(0.5f, 0.5f),
-                size);
-            sprite.name = "Runtime " + shape;
-            sprite.hideFlags = HideFlags.DontSave;
-            return sprite;
-        }
-
-        private static bool IsFilled(Shape shape, float x, float y)
-        {
-            switch (shape)
-            {
-                case Shape.Circle:
-                    return x * x + y * y <= 0.78f;
-                case Shape.Diamond:
-                    return Mathf.Abs(x) + Mathf.Abs(y) <= 0.86f;
-                case Shape.Egg:
-                    return x * x / 0.48f + (y + 0.12f) * (y + 0.12f) / 0.78f <= 1f;
-                case Shape.Ring:
-                    float radius = x * x + y * y;
-                    return radius <= 0.8f && radius >= 0.38f;
-                case Shape.Player:
-                    bool body = Mathf.Abs(x) <= 0.62f && Mathf.Abs(y) <= 0.62f;
-                    bool pointer = y > 0.45f && Mathf.Abs(x) <= 0.9f - y;
-                    return body || pointer;
-                default:
-                    return Mathf.Abs(x) <= 0.72f && Mathf.Abs(y) <= 0.72f;
-            }
-        }
-    }
 }

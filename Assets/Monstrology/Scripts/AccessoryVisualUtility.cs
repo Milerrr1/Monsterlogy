@@ -19,44 +19,77 @@ namespace Monstrology
             GameObject root = UIFactory.Object("EquippedAccessories", portrait);
             UIFactory.Stretch(root.GetComponent<RectTransform>());
 
+            Dictionary<AccessorySlot, RectTransform> anchors =
+                BuildAnchors(root.transform);
             List<AccessoryData> equipped = inventory.GetEquippedAccessories(pet.uniqueId);
             foreach (AccessoryData accessory in equipped)
             {
                 Image visual = UIFactory.Image(
                     accessory.slot + "_" + accessory.id,
-                    root.transform,
-                    accessory.icon != null
+                    anchors[accessory.slot],
+                    SpriteDatabase.Active.HasAccessoryArtwork(accessory)
                         ? Color.white
                         : PetLocalization.RarityColor(accessory.rarity));
-                visual.sprite = accessory.icon != null
-                    ? accessory.icon
-                    : WorldPlaceholderSprites.Square;
+                visual.sprite = SpriteDatabase.Active.GetAccessory(accessory);
                 visual.preserveAspect = true;
                 visual.raycastTarget = false;
                 PlaceVisual(visual.rectTransform, accessory.slot);
             }
         }
 
+        private static Dictionary<AccessorySlot, RectTransform> BuildAnchors(Transform root)
+        {
+            Dictionary<AccessorySlot, RectTransform> anchors =
+                new Dictionary<AccessorySlot, RectTransform>();
+            anchors.Add(
+                AccessorySlot.Head,
+                CreateAnchor(root, AccessorySlot.Head));
+            anchors.Add(
+                AccessorySlot.Body,
+                CreateAnchor(root, AccessorySlot.Body));
+            anchors.Add(
+                AccessorySlot.Legs,
+                CreateAnchor(root, AccessorySlot.Legs));
+            return anchors;
+        }
+
+        private static RectTransform CreateAnchor(Transform root, AccessorySlot slot)
+        {
+            string name = CreatureVisualRig.GetAnchorName(slot);
+            GameObject anchorObject = UIFactory.Object(name, root);
+            RectTransform anchor = anchorObject.GetComponent<RectTransform>();
+            Vector3 localPosition = CreatureBaseTemplate.Active.GetAnchorPosition(slot);
+            Vector2 normalized = new Vector2(
+                localPosition.x + 0.5f,
+                localPosition.y + 0.5f);
+            UIFactory.SetRect(
+                anchor,
+                normalized,
+                normalized,
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                Vector2.zero);
+            return anchor;
+        }
+
         private static void PlaceVisual(RectTransform rect, AccessorySlot slot)
         {
-            switch (slot)
-            {
-                case AccessorySlot.Head:
-                    UIFactory.SetRect(rect,
-                        new Vector2(0.5f, 0.78f), new Vector2(0.5f, 0.78f),
-                        new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(58f, 34f));
-                    break;
-                case AccessorySlot.Body:
-                    UIFactory.SetRect(rect,
-                        new Vector2(0.5f, 0.42f), new Vector2(0.5f, 0.42f),
-                        new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(68f, 48f));
-                    break;
-                default:
-                    UIFactory.SetRect(rect,
-                        new Vector2(0.5f, 0.12f), new Vector2(0.5f, 0.12f),
-                        new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(62f, 28f));
-                    break;
-            }
+            Vector2 normalizedSize =
+                CreatureBaseTemplate.Active.GetAccessorySize(slot);
+            RectTransform portrait = rect.parent.parent as RectTransform;
+            Vector2 parentSize = portrait != null && portrait.rect.size != Vector2.zero
+                ? portrait.rect.size
+                : new Vector2(100f, 100f);
+            Vector2 size = new Vector2(
+                parentSize.x * normalizedSize.x,
+                parentSize.y * normalizedSize.y);
+            UIFactory.SetRect(
+                rect,
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                size);
         }
     }
 }

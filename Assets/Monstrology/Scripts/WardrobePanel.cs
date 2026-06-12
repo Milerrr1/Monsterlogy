@@ -161,8 +161,8 @@ namespace Monstrology
             Image icon = UIFactory.Image("Icon", row.transform, Color.white);
             UIFactory.SetRect(icon.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
                 new Vector2(0f, 0.5f), new Vector2(14f, 0f), new Vector2(52f, 52f));
-            icon.sprite = accessory.icon != null ? accessory.icon : WorldPlaceholderSprites.Square;
-            icon.color = accessory.icon != null
+            icon.sprite = SpriteDatabase.Active.GetAccessory(accessory);
+            icon.color = SpriteDatabase.Active.HasAccessoryArtwork(accessory)
                 ? Color.white
                 : PetLocalization.RarityColor(accessory.rarity);
 
@@ -170,7 +170,11 @@ namespace Monstrology
                 "Info",
                 row.transform,
                 accessory.displayName + "\n" + accessory.slot + "  |  " +
-                PetLocalization.Rarity(accessory.rarity),
+                PetLocalization.Rarity(accessory.rarity) +
+                (accessory.IsSignature
+                    ? "  |  Сигнатура: " +
+                      Localization.Biome(ParseSignatureBiome(accessory))
+                    : "  |  Обычная"),
                 16,
                 FontStyle.Normal,
                 TextAnchor.MiddleLeft);
@@ -200,6 +204,16 @@ namespace Monstrology
 
                 Rebuild();
             });
+        }
+
+        private static BiomeType ParseSignatureBiome(AccessoryData accessory)
+        {
+            BiomeType biome;
+            return accessory != null &&
+                   !string.IsNullOrEmpty(accessory.signatureBiomeId) &&
+                   System.Enum.TryParse(accessory.signatureBiomeId, true, out biome)
+                ? biome
+                : accessory != null ? accessory.signatureBiome : BiomeType.Forest;
         }
     }
 }

@@ -114,6 +114,7 @@ namespace Monstrology
 
             List<CreatureData> creatures = game.CurrentBiome.availableCreatures.FindAll(creature =>
                 creature != null &&
+                creature.appearanceChance > 0.001f &&
                 creature.rarity != CreatureRarity.Legendary &&
                 creature.rarity != CreatureRarity.Secret &&
                 game.AreAppearanceConditionsMet(creature));

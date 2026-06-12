@@ -26,7 +26,7 @@ namespace Monstrology
                 grid = content.gameObject.AddComponent<GridLayoutGroup>();
                 grid.padding = new RectOffset(16, 16, 16, 24);
                 grid.spacing = new Vector2(12f, 12f);
-                grid.cellSize = new Vector2(210f, 258f);
+                grid.cellSize = new Vector2(210f, 320f);
                 grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
                 grid.constraintCount = 4;
                 grid.childAlignment = TextAnchor.UpperCenter;
@@ -55,9 +55,9 @@ namespace Monstrology
             UIFactory.SetRect(portrait.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
                 new Vector2(0.5f, 1f), new Vector2(0f, -12f), new Vector2(126f, 108f));
             portrait.sprite = found
-                ? creature.icon != null ? creature.icon : WorldPlaceholderSprites.Circle
-                : WorldPlaceholderSprites.Ring;
-            portrait.color = found && creature.icon == null
+                ? SpriteDatabase.Active.GetCreaturePortrait(creature)
+                : SpriteDatabase.Active.GetUnknownCreature();
+            portrait.color = found && !SpriteDatabase.Active.HasCreatureArtwork(creature)
                 ? Localization.RarityColor(creature.rarity)
                 : found ? Color.white : new Color(0.22f, 0.25f, 0.32f);
             portrait.preserveAspect = true;
@@ -78,33 +78,40 @@ namespace Monstrology
             }
             else
             {
-                if (game.IsHintPurchased(creature.id))
+                int hintLevel = game.GetHintLevel(creature.id);
+                if (hintLevel > 0)
                 {
-                    string hint = BuildAppearanceHint(creature);
-                    details = "Силуэт не опознан.\n\nПодсказка: " + hint;
+                    details = "Силуэт не опознан.\n\n" +
+                              BuildProgressiveHint(creature, hintLevel);
                 }
                 else
                 {
-                    details = "Силуэт не опознан.\n\nПодсказка пока скрыта.";
+                    details =
+                        "Силуэт не опознан.\n\nПервая подсказка назовёт только биом.";
                 }
             }
 
-            Text info = UIFactory.Text("Info", card.transform, details, 12, FontStyle.Normal, TextAnchor.UpperCenter);
+            Text info = UIFactory.Text("Info", card.transform, details, 11, FontStyle.Normal, TextAnchor.UpperCenter);
             UIFactory.SetOffsets(info.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 1f),
-                new Vector2(10f, found || game.IsHintPurchased(creature.id) ? 10f : 48f),
+                new Vector2(10f, found || game.GetHintLevel(creature.id) >= 4 ? 10f : 48f),
                 new Vector2(-10f, -164f));
             info.color = found ? new Color(0.82f, 0.85f, 0.91f) : new Color(0.54f, 0.57f, 0.63f);
 
-            if (!found && !game.IsHintPurchased(creature.id))
+            int currentHintLevel = game.GetHintLevel(creature.id);
+            if (!found && currentHintLevel < 4)
             {
-                Button hintButton = UIFactory.Button("BuyHint", card.transform, "ПОДСКАЗКА  15",
+                int cost = game.GetNextHintCost(creature);
+                Button hintButton = UIFactory.Button(
+                    "BuyHint",
+                    card.transform,
+                    "ПОДСКАЗКА " + (currentHintLevel + 1) + "/4  •  " + cost,
                     new Color(0.48f, 0.34f, 0.17f));
                 UIFactory.SetRect(hintButton.GetComponent<RectTransform>(),
                     new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                    new Vector2(0f, 8f), new Vector2(174f, 34f));
+                    new Vector2(0f, 8f), new Vector2(192f, 34f));
                 hintButton.onClick.AddListener(delegate
                 {
-                    if (game.TryBuyHint(creature.id, 15))
+                    if (game.TryBuyNextHint(creature.id))
                     {
                         Rebuild();
                     }
@@ -129,25 +136,69 @@ namespace Monstrology
                        : " • " + Mathf.CeilToInt((float)remaining.TotalMinutes) + " мин.");
         }
 
-        private static string BuildAppearanceHint(CreatureData creature)
+        private string BuildProgressiveHint(CreatureData creature, int level)
         {
-            if (creature.allowedTimes != null && creature.allowedTimes.Count > 0)
+            string text = "Уровень подсказки " + Mathf.Clamp(level, 1, 4) + "/4";
+            if (level >= 1)
             {
-                return "Время появления: " +
-                       string.Join(", ", creature.allowedTimes.ConvertAll(
-                           WorldEnvironmentSystem.Localize));
+                text += "\nБиом: " + Localization.Biome(creature.biome) + ".";
             }
 
-            if (creature.allowedWeather != null && creature.allowedWeather.Count > 0)
+            if (level >= 2)
             {
-                return "Погода: " +
-                       string.Join(", ", creature.allowedWeather.ConvertAll(
-                           WorldEnvironmentSystem.Localize));
+                text += "\nВремя: " +
+                        (creature.allowedTimes != null &&
+                         creature.allowedTimes.Count > 0
+                            ? string.Join(", ", creature.allowedTimes.ConvertAll(
+                                WorldEnvironmentSystem.Localize))
+                            : "может появиться в разное время") + ".";
             }
 
-            return creature.appearanceConditions.Count > 0
+            if (level >= 3)
+            {
+                text += "\nПогода: " +
+                        (creature.allowedWeather != null &&
+                         creature.allowedWeather.Count > 0
+                            ? string.Join(", ", creature.allowedWeather.ConvertAll(
+                                WorldEnvironmentSystem.Localize))
+                            : "особых ограничений нет") + ".";
+            }
+
+            if (level >= 4)
+            {
+                text += "\nСпособ: " + BuildSearchMethod(creature) + ".";
+            }
+
+            return text;
+        }
+
+        private string BuildSearchMethod(CreatureData creature)
+        {
+            SpeciesEvolutionData evolution = game.Content.speciesEvolutions.Find(entry =>
+                entry != null && entry.resultSpeciesId == creature.id);
+            if (evolution != null)
+            {
+                return "открывается через эволюцию предыдущей формы";
+            }
+
+            bool hasNest = game.Content.creatureNests.Exists(nest =>
+                nest != null && nest.speciesId == creature.id);
+            if (hasNest)
+            {
+                return "цепочка следов может привести к его логову";
+            }
+
+            bool hasEvent = game.Content.biomeEvents.Exists(eventData =>
+                eventData != null && eventData.biome == creature.biome);
+            if (hasEvent && creature.rarity != CreatureRarity.Common)
+            {
+                return "исследуйте биом во время редкого события";
+            }
+
+            return creature.appearanceConditions != null &&
+                   creature.appearanceConditions.Count > 0
                 ? creature.appearanceConditions[0].GetHint()
-                : "Ищите в биоме: " + Localization.Biome(creature.biome);
+                : "исследуйте биом и проверяйте цепочки следов";
         }
     }
 }

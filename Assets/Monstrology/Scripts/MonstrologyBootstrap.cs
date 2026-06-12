@@ -8,6 +8,8 @@ namespace Monstrology
     {
         [SerializeField] private bool useRuntimeDemoContent = true;
         [SerializeField] private GameContent authoredContent = new GameContent();
+        [SerializeField] private CreatureBaseTemplate creatureBaseTemplate;
+        [SerializeField] private SpriteDatabase spriteDatabase;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreateForEmptyScene()
@@ -37,7 +39,21 @@ namespace Monstrology
             }
 
             GameContent content = useRuntimeDemoContent ? DemoContentFactory.Create() : authoredContent;
+            ContentAvailabilityRepair.Repair(content);
+            EvolutionFallbackBuilder.EnsureFallbackChains(content);
+            NestFallbackBuilder.EnsureBaseSpeciesNests(content);
+            CreatureBaseTemplate.Install(creatureBaseTemplate);
+            SpriteDatabase.Install(spriteDatabase);
+            ContentValidator.Validate(content);
             game.Initialize(content);
+
+            AudioManager audioManager = GetComponent<AudioManager>();
+            if (audioManager == null)
+            {
+                audioManager = gameObject.AddComponent<AudioManager>();
+            }
+
+            audioManager.Initialize();
 
             EnergyRegenerationSystem energyRegeneration =
                 GetComponent<EnergyRegenerationSystem>();
@@ -96,6 +112,14 @@ namespace Monstrology
 
             accessoryInventory.Initialize(game, petCollection);
             exploration.Initialize(game, accessoryInventory);
+
+            DailyRewardSystem dailyRewards = GetComponent<DailyRewardSystem>();
+            if (dailyRewards == null)
+            {
+                dailyRewards = gameObject.AddComponent<DailyRewardSystem>();
+            }
+
+            dailyRewards.Initialize(game, accessoryInventory);
 
             SignatureSetSystem signatureSets = GetComponent<SignatureSetSystem>();
             if (signatureSets == null)
@@ -225,6 +249,34 @@ namespace Monstrology
                 breeding,
                 upgrades);
 
+            GameplayHintSystem hints = GetComponent<GameplayHintSystem>();
+            if (hints == null)
+            {
+                hints = gameObject.AddComponent<GameplayHintSystem>();
+            }
+
+            hints.Initialize(game);
+
+            if (GetComponent<ReleaseReadinessCheck>() == null)
+            {
+                gameObject.AddComponent<ReleaseReadinessCheck>();
+            }
+
+            if (GetComponent<EncyclopediaAvailabilityCheck>() == null)
+            {
+                gameObject.AddComponent<EncyclopediaAvailabilityCheck>();
+            }
+
+            if (GetComponent<BetaReadinessCheck>() == null)
+            {
+                gameObject.AddComponent<BetaReadinessCheck>();
+            }
+
+            if (GetComponent<CreatureVisualValidator>() == null)
+            {
+                gameObject.AddComponent<CreatureVisualValidator>();
+            }
+
             PetSystemDebugTools debugTools = GetComponent<PetSystemDebugTools>();
             if (debugTools == null)
             {
@@ -251,7 +303,7 @@ namespace Monstrology
             GameObject visualObject = new GameObject("Visual");
             visualObject.transform.SetParent(playerObject.transform, false);
             SpriteRenderer renderer = visualObject.AddComponent<SpriteRenderer>();
-            renderer.sprite = WorldPlaceholderSprites.Player;
+            renderer.sprite = SpriteDatabase.Active.GetPlayer();
             renderer.color = new Color(0.28f, 0.76f, 0.98f);
             renderer.sortingOrder = 20;
 
@@ -278,8 +330,7 @@ namespace Monstrology
 
             foreach (CreatureData creature in content.creatures)
             {
-                if (creature.id == "galactic_bread_cat" || creature.id == "steam_saur" ||
-                    creature.id == "glow_mushroom" || IsEvolutionResult(content, creature.id))
+                if (IsEvolutionResult(content, creature.id))
                 {
                     continue;
                 }
@@ -300,15 +351,15 @@ namespace Monstrology
             Dictionary<BiomeType, BiomeData> result = new Dictionary<BiomeType, BiomeData>();
             AddBiome(content, result, BiomeType.Forest, "Лес", 0,
                 "Мягкий мох, высокие грибы и шорохи в листве.", new Color(0.12f, 0.34f, 0.24f));
-            AddBiome(content, result, BiomeType.Desert, "Пустыня", 60,
+            AddBiome(content, result, BiomeType.Desert, "Пустыня", 300,
                 "Горячие дюны скрывают механических и фруктовых существ.", new Color(0.54f, 0.32f, 0.14f));
-            AddBiome(content, result, BiomeType.Tundra, "Тундра", 140,
+            AddBiome(content, result, BiomeType.Tundra, "Тундра", 1000,
                 "Снег хранит следы лучше любого исследовательского журнала.", new Color(0.24f, 0.44f, 0.58f));
-            AddBiome(content, result, BiomeType.Volcano, "Вулкан", 250,
+            AddBiome(content, result, BiomeType.Volcano, "Вулкан", 3000,
                 "Здесь камни светятся, а воздух дрожит от жара.", new Color(0.48f, 0.13f, 0.1f));
-            AddBiome(content, result, BiomeType.Ocean, "Океан", 360,
+            AddBiome(content, result, BiomeType.Ocean, "Океан", 8000,
                 "Подводные лампы, ракушки и загадочные песни глубин.", new Color(0.05f, 0.25f, 0.44f));
-            AddBiome(content, result, BiomeType.Space, "Космос", 500,
+            AddBiome(content, result, BiomeType.Space, "Космос", 20000,
                 "Обломки комет и островки звёздной пыли.", new Color(0.10f, 0.07f, 0.25f));
             return result;
         }
@@ -480,7 +531,7 @@ namespace Monstrology
             AddAccessory(content, "astro_jacket", "Куртка астронавта", "Защищает от звёздной пыли.",
                 PetRarity.Rare, AccessorySlot.Body, 0.1f, new Color(0.48f, 0.62f, 1f),
                 new Vector2(0f, -0.18f), new Vector2(1.15f, 0.65f), "astronaut_set", BiomeType.Space);
-            AddAccessory(content, "astro_boots", "Ботинки астронавта", "Уверенно держат питомца на астероидах.",
+            AddAccessory(content, "astro_boots", "Лунные ботинки", "Уверенно держат питомца на астероидах.",
                 PetRarity.Epic, AccessorySlot.Legs, 0.07f, new Color(0.55f, 0.48f, 0.96f),
                 new Vector2(0f, -0.55f), new Vector2(1.1f, 0.42f), "astronaut_set", BiomeType.Space);
 
@@ -500,9 +551,48 @@ namespace Monstrology
             AddAccessory(content, "snow_scarf", "Снежный шарф", "Мягкий шарф полярного исследователя.",
                 PetRarity.Rare, AccessorySlot.Body, 0.1f, new Color(0.5f, 0.82f, 1f),
                 new Vector2(0f, -0.28f), new Vector2(1.2f, 0.32f), "tundra_set", BiomeType.Tundra);
-            AddAccessory(content, "polar_boots", "Сапоги полярника", "Не проваливаются в глубокий снег.",
+            AddAccessory(content, "polar_boots", "Ледяные сапоги", "Не проваливаются в глубокий снег.",
                 PetRarity.Epic, AccessorySlot.Legs, 0.07f, new Color(0.62f, 0.78f, 0.94f),
                 new Vector2(0f, -0.55f), new Vector2(1.1f, 0.42f), "tundra_set", BiomeType.Tundra);
+
+            AddAccessory(content, "forest_hat", "Лесная шляпа", "Шляпа хранителя лесных троп.",
+                PetRarity.Rare, AccessorySlot.Head, 0.12f, new Color(0.34f, 0.72f, 0.3f),
+                new Vector2(0f, 0.62f), new Vector2(1.2f, 0.55f), "forest_set", BiomeType.Forest,
+                "mushroom_fox");
+            AddAccessory(content, "mushroom_cloak", "Грибной плащ", "Плащ с узором светящихся спор.",
+                PetRarity.Rare, AccessorySlot.Body, 0.1f, new Color(0.62f, 0.3f, 0.42f),
+                new Vector2(0f, -0.18f), new Vector2(1.2f, 0.7f), "forest_set", BiomeType.Forest,
+                "mushroom_fox");
+            AddAccessory(content, "trail_boots", "Сапоги следопыта", "Не оставляют лишних следов на мху.",
+                PetRarity.Epic, AccessorySlot.Legs, 0.07f, new Color(0.45f, 0.58f, 0.26f),
+                new Vector2(0f, -0.55f), new Vector2(1.1f, 0.42f), "forest_set", BiomeType.Forest,
+                "mushroom_fox");
+
+            AddAccessory(content, "sand_band", "Песочная повязка", "Защищает глаза во время песчаной бури.",
+                PetRarity.Rare, AccessorySlot.Head, 0.12f, new Color(0.86f, 0.65f, 0.3f),
+                new Vector2(0f, 0.5f), new Vector2(1.15f, 0.42f), "desert_set", BiomeType.Desert,
+                "vacuum_rhino");
+            AddAccessory(content, "caravan_cloak", "Караванный плащ", "Лёгкий плащ для долгого пути.",
+                PetRarity.Rare, AccessorySlot.Body, 0.1f, new Color(0.72f, 0.44f, 0.22f),
+                new Vector2(0f, -0.18f), new Vector2(1.2f, 0.7f), "desert_set", BiomeType.Desert,
+                "vacuum_rhino");
+            AddAccessory(content, "desert_sandals", "Сандалии пустыни", "Не нагреваются на горячем песке.",
+                PetRarity.Epic, AccessorySlot.Legs, 0.07f, new Color(0.82f, 0.58f, 0.28f),
+                new Vector2(0f, -0.55f), new Vector2(1.1f, 0.42f), "desert_set", BiomeType.Desert,
+                "vacuum_rhino");
+
+            AddAccessory(content, "coral_crown", "Коралловая корона", "Мягко светится в глубине океана.",
+                PetRarity.Rare, AccessorySlot.Head, 0.12f, new Color(1f, 0.45f, 0.5f),
+                new Vector2(0f, 0.62f), new Vector2(1.15f, 0.55f), "ocean_set", BiomeType.Ocean,
+                "lamp_crab");
+            AddAccessory(content, "pearl_vest", "Жемчужный жилет", "Собран из лёгких перламутровых пластин.",
+                PetRarity.Rare, AccessorySlot.Body, 0.1f, new Color(0.68f, 0.9f, 0.92f),
+                new Vector2(0f, -0.18f), new Vector2(1.2f, 0.66f), "ocean_set", BiomeType.Ocean,
+                "lamp_crab");
+            AddAccessory(content, "fin_boots", "Плавниковые ботинки", "Помогают быстро двигаться под водой.",
+                PetRarity.Epic, AccessorySlot.Legs, 0.07f, new Color(0.25f, 0.72f, 0.78f),
+                new Vector2(0f, -0.55f), new Vector2(1.1f, 0.42f), "ocean_set", BiomeType.Ocean,
+                "lamp_crab");
         }
 
         private static void CreateSignatureSets(GameContent content)
@@ -516,6 +606,15 @@ namespace Monstrology
             AddSignatureSet(content, "tundra_set", "Комплект полярника", BiomeType.Tundra,
                 new[] { "polar_hat", "snow_scarf", "polar_boots" },
                 new[] { "ice_saur" });
+            AddSignatureSet(content, "forest_set", "Комплект следопыта", BiomeType.Forest,
+                new[] { "forest_hat", "mushroom_cloak", "trail_boots" },
+                new[] { "mushroom_fox" });
+            AddSignatureSet(content, "desert_set", "Комплект каравана", BiomeType.Desert,
+                new[] { "sand_band", "caravan_cloak", "desert_sandals" },
+                new[] { "vacuum_rhino" });
+            AddSignatureSet(content, "ocean_set", "Коралловый комплект", BiomeType.Ocean,
+                new[] { "coral_crown", "pearl_vest", "fin_boots" },
+                new[] { "lamp_crab" });
         }
 
         private static void CreateCreatureNests(GameContent content)
@@ -551,8 +650,8 @@ namespace Monstrology
         private static void CreateEvolutions(GameContent content)
         {
             AddEvolution(content, "bread_cat", 100, "bread_cat_ii");
-            AddEvolution(content, "bread_cat_ii", 100, "bread_cat_iii");
-            AddEvolution(content, "bread_cat_iii", 100, "bread_cat_king");
+            AddEvolution(content, "bread_cat_ii", 250, "bread_cat_iii");
+            AddEvolution(content, "bread_cat_iii", 500, "bread_cat_king");
             AddEvolution(content, "ice_saur", 100, "ice_saur_ii");
             AddEvolution(content, "magma_orb", 100, "magma_orb_ii");
             AddEvolution(content, "cosmo_cat", 100, "cosmo_cat_ii");
@@ -597,6 +696,8 @@ namespace Monstrology
             creature.biome = biome;
             creature.appearanceChance = chance;
             creature.icon = RuntimeIconFactory.CreateCreatureIcon(color, StableVariant(id));
+            creature.portraitSprite = creature.icon;
+            creature.worldSprite = creature.icon;
             content.creatures.Add(creature);
             target.Add(id, creature);
             return creature;
@@ -645,7 +746,8 @@ namespace Monstrology
             Vector2 offset,
             Vector2 scale,
             string setId = "",
-            BiomeType signatureBiome = BiomeType.Forest)
+            BiomeType signatureBiome = BiomeType.Forest,
+            string signatureSpeciesId = "")
         {
             AccessoryData accessory = ScriptableObject.CreateInstance<AccessoryData>();
             accessory.hideFlags = HideFlags.DontSave;
@@ -660,6 +762,12 @@ namespace Monstrology
             accessory.visualScale = scale;
             accessory.signatureSetId = setId;
             accessory.signatureBiome = signatureBiome;
+            accessory.isSignature = !string.IsNullOrEmpty(setId);
+            accessory.signatureBiomeId = accessory.isSignature
+                ? signatureBiome.ToString()
+                : string.Empty;
+            accessory.signatureSpeciesId = signatureSpeciesId;
+            accessory.setId = setId;
             content.accessories.Add(accessory);
         }
 
@@ -693,6 +801,12 @@ namespace Monstrology
             nest.hideFlags = HideFlags.DontSave;
             nest.id = id;
             nest.displayName = title;
+            CreatureData creature = content.creatures.Find(entry =>
+                entry != null && entry.id == speciesId);
+            nest.description = "Здесь часто встречаются " +
+                               (creature != null
+                                   ? creature.creatureName
+                                   : speciesId) + ".";
             nest.speciesId = speciesId;
             nest.biome = biome;
             nest.rewardCooldownHours = cooldownHours;

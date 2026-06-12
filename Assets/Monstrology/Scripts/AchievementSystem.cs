@@ -11,6 +11,9 @@ namespace Monstrology
         public string id;
         public string title;
         public string description;
+        public string condition;
+        public string reward;
+        [Min(0)] public int coinReward;
     }
 
     public class AchievementSystem : MonoBehaviour
@@ -71,6 +74,11 @@ namespace Monstrology
                 upgrades.PetLeveled += HandlePetLeveled;
             }
 
+            if (collection != null)
+            {
+                collection.CollectionChanged += HandleCollectionChanged;
+            }
+
             EvaluateAll();
         }
 
@@ -96,52 +104,90 @@ namespace Monstrology
             {
                 id = "first_creature",
                 title = "Первое существо",
-                description = "Открыть первый вид."
+                description = "Первая запись профессора Монстролога.",
+                condition = "Открыть первый вид.",
+                reward = "Уведомление и запись в журнале."
             });
             definitions.Add(new AchievementDefinition
             {
                 id = "hundred_explorations",
                 title = "Опытный исследователь",
-                description = "Совершить 100 исследований."
+                description = "Карта мира уже покрыта заметками.",
+                condition = "Совершить 100 исследований.",
+                reward = "Уведомление и запись в журнале."
             });
             definitions.Add(new AchievementDefinition
             {
                 id = "forest_collection",
                 title = "Все существа леса",
-                description = "Открыть все встречающиеся в лесу виды."
+                description = "Лесная глава энциклопедии завершена.",
+                condition = "Открыть все встречающиеся в лесу виды.",
+                reward = "Уведомление и запись в журнале."
             });
             definitions.Add(new AchievementDefinition
             {
                 id = "first_legendary",
                 title = "Первая легендарка",
-                description = "Открыть легендарное или секретное существо."
+                description = "Редчайшая встреча подтверждена.",
+                condition = "Открыть легендарное или секретное существо.",
+                reward = "Уведомление и запись в журнале."
+            });
+            definitions.Add(new AchievementDefinition
+            {
+                id = "first_pet",
+                title = "Первый питомец",
+                description = "В экспедиции появился постоянный спутник.",
+                condition = "Добавить первое существо в питомцы.",
+                reward = "Уведомление и запись в журнале."
+            });
+            definitions.Add(new AchievementDefinition
+            {
+                id = "first_favorite",
+                title = "Первый любимчик",
+                description = "Один питомец стал главным помощником.",
+                condition = "Назначить первого любимчика.",
+                reward = "Уведомление и запись в журнале."
             });
             definitions.Add(new AchievementDefinition
             {
                 id = "first_evolution",
                 title = "Первая эволюция",
-                description = "Эволюционировать вид."
+                description = "Открыта следующая форма вида.",
+                condition = "Эволюционировать вид.",
+                reward = "Уведомление и запись в журнале."
             });
             definitions.Add(new AchievementDefinition
             {
                 id = "first_nest",
                 title = "Первое логово",
-                description = "Обнаружить первое логовище существа."
+                description = "Найдена постоянная точка наблюдения.",
+                condition = "Обнаружить первое логовище существа.",
+                reward = "Уведомление и запись в журнале."
             });
             definitions.Add(new AchievementDefinition
             {
                 id = "first_full_set",
                 title = "Первый полный комплект",
-                description = "Собрать все три предмета сигнатурного комплекта."
+                description = "Тематический образ собран полностью.",
+                condition = "Собрать все три предмета сигнатурного комплекта.",
+                reward = "Уведомление и бонус комплекта."
             });
             definitions.Add(new AchievementDefinition
             {
                 id = "first_pet_level_10",
                 title = "Опытный любимчик",
-                description = "Повысить питомца до 10 уровня."
+                description = "Питомец заметно вырос за время экспедиции.",
+                condition = "Повысить питомца до 10 уровня.",
+                reward = "Уведомление и запись в журнале."
             });
             AddBiomeAchievement("complete_tundra", "Полная энциклопедия тундры", BiomeType.Tundra);
             AddBiomeAchievement("complete_volcano", "Полная энциклопедия вулкана", BiomeType.Volcano);
+            foreach (AchievementDefinition definition in definitions)
+            {
+                definition.coinReward = GetCoinReward(definition.id);
+                definition.reward = "+" + definition.coinReward +
+                                    " монет и уведомление.";
+            }
         }
 
         private void EvaluateAll()
@@ -182,6 +228,16 @@ namespace Monstrology
                 collection.GetAllPets().Any(pet => pet != null && pet.evolutionStage > 0))
             {
                 Unlock("first_evolution");
+            }
+
+            if (collection != null && collection.Count > 0)
+            {
+                Unlock("first_pet");
+            }
+
+            if (collection != null && collection.GetFavorite() != null)
+            {
+                Unlock("first_favorite");
             }
 
             if (nests != null && nests.GetAllNests().Count > 0)
@@ -248,13 +304,20 @@ namespace Monstrology
             }
         }
 
+        private void HandleCollectionChanged()
+        {
+            EvaluateAll();
+        }
+
         private void AddBiomeAchievement(string id, string title, BiomeType biome)
         {
             definitions.Add(new AchievementDefinition
             {
                 id = id,
                 title = title,
-                description = "Открыть всех существ биома «" + Localization.Biome(biome) + "»."
+                description = "Энциклопедия биома заполнена.",
+                condition = "Открыть всех существ биома «" + Localization.Biome(biome) + "».",
+                reward = "Уведомление и запись в журнале."
             });
         }
 
@@ -280,9 +343,43 @@ namespace Monstrology
             }
 
             AchievementDefinition definition = definitions.Find(entry => entry.id == id);
+            if (definition != null && definition.coinReward > 0)
+            {
+                game.AddCoins(definition.coinReward);
+            }
+
             game.RaiseNotification("Достижение: " +
-                                   (definition != null ? definition.title : id));
+                                   (definition != null ? definition.title : id) +
+                                   (definition != null && definition.coinReward > 0
+                                       ? " • +" + definition.coinReward + " монет"
+                                       : ""));
             RaiseChanged();
+        }
+
+        private static int GetCoinReward(string id)
+        {
+            switch (id)
+            {
+                case "first_creature":
+                case "first_pet":
+                case "first_favorite":
+                    return 25;
+                case "first_nest":
+                case "first_full_set":
+                case "first_evolution":
+                    return 60;
+                case "first_pet_level_10":
+                case "hundred_explorations":
+                    return 100;
+                case "first_legendary":
+                    return 150;
+                case "forest_collection":
+                case "complete_tundra":
+                case "complete_volcano":
+                    return 200;
+                default:
+                    return 40;
+            }
         }
 
         private void RaiseChanged()
@@ -320,6 +417,11 @@ namespace Monstrology
             if (upgrades != null)
             {
                 upgrades.PetLeveled -= HandlePetLeveled;
+            }
+
+            if (collection != null)
+            {
+                collection.CollectionChanged -= HandleCollectionChanged;
             }
         }
     }

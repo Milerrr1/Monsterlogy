@@ -48,22 +48,22 @@ namespace Monstrology
             Image row = UIFactory.Image(biome.type.ToString(), content, new Color(0.09f, 0.12f, 0.18f));
             UIFactory.ApplyRounded(row);
             UIFactory.AddSoftShadow(row.gameObject);
-            UIFactory.SetLayoutHeight(row.gameObject, 154f);
+            UIFactory.SetLayoutHeight(row.gameObject, 184f);
 
             Image colorStrip = UIFactory.Image("Color", row.transform, biome.fallbackColor);
             UIFactory.SetRect(colorStrip.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 1f),
                 new Vector2(0f, 0.5f), Vector2.zero, new Vector2(12f, 0f));
 
             Text title = UIFactory.Text("Name", row.transform,
-                biome.biomeName + (current ? "  • ТЕКУЩИЙ" : ""), 20, FontStyle.Bold, TextAnchor.UpperLeft);
+                biome.biomeName + (current ? "  • ТЕКУЩИЙ" : ""), 22, FontStyle.Bold, TextAnchor.UpperLeft);
             UIFactory.SetOffsets(title.rectTransform, Vector2.zero, Vector2.one,
-                new Vector2(26f, 106f), new Vector2(-220f, -10f));
+                new Vector2(26f, 134f), new Vector2(-220f, -10f));
             title.color = current ? new Color(1f, 0.82f, 0.3f) : Color.white;
 
             Text description = UIFactory.Text("Description", row.transform, biome.description,
                 14, FontStyle.Normal, TextAnchor.LowerLeft);
             UIFactory.SetOffsets(description.rectTransform, Vector2.zero, Vector2.one,
-                new Vector2(26f, 72f), new Vector2(-220f, -42f));
+                new Vector2(26f, 98f), new Vector2(-220f, -44f));
             description.color = new Color(0.75f, 0.8f, 0.88f);
 
             int found = game.GetBiomeCreatureFound(biome.type);
@@ -75,18 +75,30 @@ namespace Monstrology
             int foundEvents = game.Content.biomeEvents.Count(data =>
                 data != null && data.biome == biome.type &&
                 game.GetFoundBiomeEvents().Contains(data.id));
+            Text mainProgress = UIFactory.Text(
+                "MainProgress",
+                row.transform,
+                found + " / " + total,
+                26,
+                FontStyle.Bold,
+                TextAnchor.MiddleLeft);
+            UIFactory.SetOffsets(mainProgress.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(26f, 54f), new Vector2(-220f, -94f));
+            mainProgress.color = current
+                ? new Color(1f, 0.82f, 0.3f)
+                : new Color(0.75f, 0.9f, 1f);
+
             Text progress = UIFactory.Text(
                 "Progress",
                 row.transform,
-                "Найдено: " + found + "/" + total +
-                "  |  Логовища: " + discoveredNests + "/" + totalNests +
+                "Логовища: " + discoveredNests + "/" + totalNests +
                 "  |  События: " + foundEvents + "/" + totalEvents +
-                "\n" + BuildUnknownPreview(biome),
-                13,
+                "\nСущества: " + BuildCreaturePreview(biome),
+                12,
                 FontStyle.Normal,
                 TextAnchor.UpperLeft);
             UIFactory.SetOffsets(progress.rectTransform, Vector2.zero, Vector2.one,
-                new Vector2(26f, 10f), new Vector2(-220f, -86f));
+                new Vector2(142f, 10f), new Vector2(-220f, -94f));
             progress.color = new Color(0.86f, 0.79f, 0.55f);
 
             string buttonText = current ? "ВЫБРАНО" : unlocked ? "ПЕРЕЙТИ" : "ОТКРЫТЬ  " + biome.unlockPrice;
@@ -94,7 +106,7 @@ namespace Monstrology
                 current ? new Color(0.3f, 0.38f, 0.32f) :
                 unlocked ? new Color(0.24f, 0.52f, 0.4f) : new Color(0.64f, 0.42f, 0.18f));
             UIFactory.SetRect(button.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f), new Vector2(-16f, 31f), new Vector2(182f, 46f));
+                new Vector2(1f, 0.5f), new Vector2(-16f, 32f), new Vector2(182f, 46f));
             button.interactable = !current;
             button.onClick.AddListener(delegate
             {
@@ -120,7 +132,7 @@ namespace Monstrology
                 new Vector2(1f, 0.5f),
                 new Vector2(1f, 0.5f),
                 new Vector2(1f, 0.5f),
-                new Vector2(-16f, -31f),
+                new Vector2(-16f, -30f),
                 new Vector2(182f, 42f));
             nestButton.interactable = unlocked && nests != null &&
                                       nests.GetReadyCount(biome.type) > 0;
@@ -146,6 +158,22 @@ namespace Monstrology
             AddRarityPreview(parts, creatures, CreatureRarity.Rare, "Редкое");
             AddRarityPreview(parts, creatures, CreatureRarity.Epic, "Эпическое");
             return parts.Count > 0 ? string.Join("  |  ", parts) : "Все тайны биома впереди.";
+        }
+
+        private string BuildCreaturePreview(BiomeData biome)
+        {
+            List<string> names = biome.availableCreatures
+                .Where(creature =>
+                    creature != null && creature.appearanceChance > 0.001f)
+                .Select(creature =>
+                    game.IsCreatureFound(creature.id)
+                        ? creature.creatureName
+                        : "???")
+                .Distinct()
+                .ToList();
+            return names.Count > 0
+                ? string.Join(", ", names)
+                : BuildUnknownPreview(biome);
         }
 
         private void AddRarityPreview(

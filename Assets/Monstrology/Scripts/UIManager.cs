@@ -23,6 +23,9 @@ namespace Monstrology
         private EnergyRegenerationSystem energyRegeneration;
         private StarterBoostSystem starterBoost;
         private BiomeEventSystem biomeEvents;
+        private AudioManager audioManager;
+        private DailyRewardSystem dailyRewards;
+        private CreatureNestSystem creatureNests;
 
         private Image background;
         private Text biomeText;
@@ -44,6 +47,11 @@ namespace Monstrology
         private GameObject accessoryPanel;
         private GameObject breedingPanel;
         private GameObject achievementPanel;
+        private GameObject pausePanel;
+        private GameObject settingsPanel;
+        private GameObject introPanel;
+        private GameObject dailyRewardPanel;
+        private GameObject nestPanel;
 
         private EncyclopediaUI encyclopediaUI;
         private BiomeUI biomeUI;
@@ -51,14 +59,25 @@ namespace Monstrology
         private WardrobePanel wardrobeUI;
         private BreedingPanel breedingUI;
         private AchievementPanel achievementUI;
+        private NestPanel nestUI;
         private PetAdoptionDialog adoptionDialog;
 
         private Transform questContent;
         private float headerTimer;
+        private Text pauseStatsText;
+        private Text dailyRewardText;
+        private bool isPaused;
+        private float timeScaleBeforePause = 1f;
 
         public bool ResultCardVisible
         {
             get { return resultCard != null && resultCard.activeSelf; }
+        }
+        public bool HasPauseMenu { get { return pausePanel != null && settingsPanel != null; } }
+        public bool IsPaused { get { return isPaused; } }
+        public bool NestPanelVisible
+        {
+            get { return nestPanel != null && nestPanel.activeSelf; }
         }
 
         public void Initialize(
@@ -145,6 +164,9 @@ namespace Monstrology
             energyRegeneration = FindObjectOfType<EnergyRegenerationSystem>();
             starterBoost = FindObjectOfType<StarterBoostSystem>();
             biomeEvents = FindObjectOfType<BiomeEventSystem>();
+            audioManager = FindObjectOfType<AudioManager>();
+            dailyRewards = FindObjectOfType<DailyRewardSystem>();
+            creatureNests = FindObjectOfType<CreatureNestSystem>();
             if (achievements == null)
             {
                 achievements = gameObject.AddComponent<AchievementSystem>();
@@ -162,6 +184,11 @@ namespace Monstrology
 
         private void Update()
         {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                HandleEscape();
+            }
+
             headerTimer -= Time.unscaledDeltaTime;
             if (headerTimer <= 0f)
             {
@@ -172,6 +199,11 @@ namespace Monstrology
 
         private void OnDestroy()
         {
+            if (isPaused)
+            {
+                Time.timeScale = timeScaleBeforePause;
+            }
+
             if (exploration != null)
             {
                 exploration.ExplorationCompleted -= ShowExplorationResult;
@@ -218,7 +250,7 @@ namespace Monstrology
 
             Text title = UIFactory.Text("Title", bar.transform, "МОНСТРОЛОГИЯ", 25, FontStyle.Bold, TextAnchor.MiddleLeft);
             UIFactory.SetRect(title.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 1f),
-                new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(260f, 0f));
+                new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(240f, 0f));
             title.color = new Color(1f, 0.84f, 0.37f);
 
             biomeText = UIFactory.Text("Biome", bar.transform, "", 18, FontStyle.Bold, TextAnchor.MiddleCenter);
@@ -235,6 +267,20 @@ namespace Monstrology
             UIFactory.SetRect(energyButton.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
                 new Vector2(1f, 0.5f), new Vector2(-14f, 0f), new Vector2(86f, 42f));
             energyButton.onClick.AddListener(ShowRewardedEnergy);
+
+            Button pauseButton = UIFactory.Button(
+                "Pause",
+                bar.transform,
+                "ПАУЗА",
+                new Color(0.22f, 0.28f, 0.38f));
+            UIFactory.SetRect(
+                pauseButton.GetComponent<RectTransform>(),
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(270f, 0f),
+                new Vector2(74f, 34f));
+            pauseButton.onClick.AddListener(TogglePause);
         }
 
         private Text CreateResourcePill(Transform parent, string name, Vector2 position, Color accent)
@@ -313,7 +359,6 @@ namespace Monstrology
             AddNavigationButton(bar.transform, "ПИТОМЦЫ", OpenPets);
             AddNavigationButton(bar.transform, "ГАРДЕРОБ", OpenWardrobe);
             AddNavigationButton(bar.transform, "ЭВОЛЮЦИЯ", OpenBreeding);
-            AddNavigationButton(bar.transform, "ДОСТИЖЕНИЯ", OpenAchievements);
             AddNavigationButton(bar.transform, "КВЕСТЫ", OpenQuests);
         }
 
@@ -326,12 +371,12 @@ namespace Monstrology
         private void BuildWorldControls(Transform parent)
         {
             Image joystickBase = UIFactory.Image("MovementJoystick", parent, new Color(0.08f, 0.12f, 0.18f, 0.72f));
-            joystickBase.sprite = WorldPlaceholderSprites.Circle;
+            joystickBase.sprite = SpriteDatabase.Active.GetJoystickBase();
             UIFactory.SetRect(joystickBase.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f),
                 new Vector2(0f, 0f), new Vector2(24f, 74f), new Vector2(118f, 118f));
 
             Image handle = UIFactory.Image("Handle", joystickBase.transform, new Color(0.36f, 0.76f, 0.98f, 0.88f));
-            handle.sprite = WorldPlaceholderSprites.Circle;
+            handle.sprite = SpriteDatabase.Active.GetJoystickHandle();
             UIFactory.SetRect(handle.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(48f, 48f));
             handle.raycastTarget = false;
@@ -396,7 +441,220 @@ namespace Monstrology
             achievementUI = gameObject.AddComponent<AchievementPanel>();
             achievementUI.Initialize(achievements, UIFactory.FindContent(achievementPanel));
 
+            nestPanel = CreateModal(parent, "ЛОГОВИЩЕ");
+            nestUI = gameObject.AddComponent<NestPanel>();
+            nestUI.Initialize(
+                game,
+                creatureNests,
+                nestPanel,
+                UIFactory.FindContent(nestPanel));
+
             BuildAdoptionDialog(parent);
+            BuildPauseMenu(parent);
+            BuildSettingsMenu(parent);
+            BuildIntro(parent);
+            BuildDailyReward(parent);
+        }
+
+        private void BuildPauseMenu(Transform parent)
+        {
+            pausePanel = UIFactory.Object("PauseMenu", parent);
+            UIFactory.Stretch(pausePanel.GetComponent<RectTransform>());
+            Image dim = UIFactory.Image("Dim", pausePanel.transform, new Color(0.015f, 0.02f, 0.035f, 0.9f));
+            UIFactory.Stretch(dim.rectTransform);
+
+            Image card = UIFactory.Image("Card", pausePanel.transform, new Color(0.075f, 0.095f, 0.14f));
+            UIFactory.ApplyRounded(card);
+            UIFactory.AddSoftShadow(card.gameObject);
+            UIFactory.SetRect(card.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560f, 480f));
+
+            Text heading = UIFactory.Text(
+                "Heading", card.transform, "ПАУЗА", 30, FontStyle.Bold, TextAnchor.MiddleCenter);
+            UIFactory.SetRect(heading.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(-40f, 48f));
+            heading.color = new Color(1f, 0.82f, 0.32f);
+
+            pauseStatsText = UIFactory.Text(
+                "Statistics", card.transform, "", 15, FontStyle.Normal, TextAnchor.UpperLeft);
+            UIFactory.SetOffsets(pauseStatsText.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(34f, 270f), new Vector2(-34f, -74f));
+            pauseStatsText.color = new Color(0.82f, 0.87f, 0.94f);
+
+            AddPauseButton(card.transform, "Continue", "ПРОДОЛЖИТЬ", -5f, ResumeGame,
+                new Color(0.25f, 0.62f, 0.46f));
+            AddPauseButton(card.transform, "Settings", "НАСТРОЙКИ", -61f, OpenSettingsFromPause,
+                new Color(0.26f, 0.48f, 0.72f));
+            AddPauseButton(card.transform, "Achievements", "ДОСТИЖЕНИЯ", -117f, OpenAchievements,
+                new Color(0.52f, 0.38f, 0.7f));
+            AddPauseButton(card.transform, "Exit", "ВЫХОД", -173f, ExitGame,
+                new Color(0.66f, 0.3f, 0.34f));
+            pausePanel.SetActive(false);
+        }
+
+        private void AddPauseButton(
+            Transform parent,
+            string name,
+            string label,
+            float y,
+            UnityEngine.Events.UnityAction action,
+            Color color)
+        {
+            Button button = UIFactory.Button(name, parent, label, color);
+            UIFactory.SetRect(button.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(0f, y), new Vector2(270f, 46f));
+            button.onClick.AddListener(action);
+        }
+
+        private void BuildSettingsMenu(Transform parent)
+        {
+            settingsPanel = UIFactory.Object("SettingsMenu", parent);
+            UIFactory.Stretch(settingsPanel.GetComponent<RectTransform>());
+            Image dim = UIFactory.Image("Dim", settingsPanel.transform, new Color(0.015f, 0.02f, 0.035f, 0.92f));
+            UIFactory.Stretch(dim.rectTransform);
+
+            Image card = UIFactory.Image("Card", settingsPanel.transform, new Color(0.075f, 0.095f, 0.14f));
+            UIFactory.ApplyRounded(card);
+            UIFactory.SetRect(card.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520f, 360f));
+
+            Text heading = UIFactory.Text(
+                "Heading", card.transform, "НАСТРОЙКИ", 28, FontStyle.Bold, TextAnchor.MiddleCenter);
+            UIFactory.SetRect(heading.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f), new Vector2(0f, -20f), new Vector2(-32f, 46f));
+            heading.color = new Color(1f, 0.82f, 0.32f);
+
+            BuildVolumeSlider(card.transform, "Музыка", 62f, true);
+            BuildVolumeSlider(card.transform, "Звуки", -18f, false);
+
+            Button back = UIFactory.Button(
+                "Back", card.transform, "НАЗАД", new Color(0.32f, 0.42f, 0.56f));
+            UIFactory.SetRect(back.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 26f), new Vector2(190f, 46f));
+            back.onClick.AddListener(ShowPauseMain);
+            settingsPanel.SetActive(false);
+        }
+
+        private void BuildVolumeSlider(Transform parent, string label, float y, bool music)
+        {
+            Text caption = UIFactory.Text(
+                label, parent, label, 17, FontStyle.Bold, TextAnchor.MiddleLeft);
+            UIFactory.SetRect(caption.rectTransform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(-128f, y + 24f), new Vector2(170f, 30f));
+
+            Text value = UIFactory.Text(
+                "Value", parent, "", 15, FontStyle.Normal, TextAnchor.MiddleRight);
+            UIFactory.SetRect(value.rectTransform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(166f, y + 24f), new Vector2(70f, 30f));
+
+            Slider slider = UIFactory.Slider(label + "Slider", parent);
+            UIFactory.SetRect(slider.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(0f, y), new Vector2(360f, 26f));
+            slider.value = audioManager != null
+                ? music ? audioManager.MusicVolume : audioManager.SfxVolume
+                : 0.8f;
+            value.text = Mathf.RoundToInt(slider.value * 100f) + "%";
+            slider.onValueChanged.AddListener(newValue =>
+            {
+                value.text = Mathf.RoundToInt(newValue * 100f) + "%";
+                if (audioManager != null)
+                {
+                    if (music)
+                    {
+                        audioManager.SetMusicVolume(newValue);
+                    }
+                    else
+                    {
+                        audioManager.SetSfxVolume(newValue);
+                    }
+                }
+            });
+        }
+
+        private void BuildIntro(Transform parent)
+        {
+            introPanel = UIFactory.Object("IntroPanel", parent);
+            UIFactory.Stretch(introPanel.GetComponent<RectTransform>());
+            Image dim = UIFactory.Image("Dim", introPanel.transform, new Color(0.015f, 0.02f, 0.035f, 0.94f));
+            UIFactory.Stretch(dim.rectTransform);
+            Image card = UIFactory.Image("Card", introPanel.transform, new Color(0.085f, 0.11f, 0.17f));
+            UIFactory.ApplyRounded(card);
+            UIFactory.SetRect(card.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(650f, 370f));
+
+            Text heading = UIFactory.Text(
+                "Professor", card.transform, "ПРОФЕССОР МОНСТРОЛОГ", 27,
+                FontStyle.Bold, TextAnchor.MiddleCenter);
+            UIFactory.SetRect(heading.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f), new Vector2(0f, -22f), new Vector2(-36f, 48f));
+            heading.color = new Color(1f, 0.82f, 0.32f);
+
+            Text body = UIFactory.Text(
+                "Body",
+                card.transform,
+                "Добро пожаловать, исследователь!\n" +
+                "Этот мир полон странных существ.\n" +
+                "Ищи следы, открывай биомы, собирай питомцев и заполняй энциклопедию.\n\n" +
+                "Первая цель: исследуй Лес и найди первое существо.",
+                20,
+                FontStyle.Normal,
+                TextAnchor.MiddleCenter);
+            UIFactory.SetOffsets(body.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(40f, 92f), new Vector2(-40f, -82f));
+            body.color = new Color(0.88f, 0.91f, 0.96f);
+
+            Button start = UIFactory.Button(
+                "Start", card.transform, "НАЧАТЬ ИССЛЕДОВАНИЕ",
+                new Color(0.28f, 0.65f, 0.43f));
+            UIFactory.SetRect(start.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 24f), new Vector2(270f, 52f));
+            start.onClick.AddListener(CompleteIntro);
+            introPanel.SetActive(false);
+        }
+
+        private void BuildDailyReward(Transform parent)
+        {
+            dailyRewardPanel = UIFactory.Object("DailyRewardPanel", parent);
+            UIFactory.Stretch(dailyRewardPanel.GetComponent<RectTransform>());
+            Image dim = UIFactory.Image("Dim", dailyRewardPanel.transform, new Color(0.015f, 0.02f, 0.035f, 0.78f));
+            UIFactory.Stretch(dim.rectTransform);
+            Image card = UIFactory.Image("Card", dailyRewardPanel.transform, new Color(0.09f, 0.12f, 0.18f));
+            UIFactory.ApplyRounded(card);
+            UIFactory.SetRect(card.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(470f, 280f));
+
+            Text heading = UIFactory.Text(
+                "Heading", card.transform, "ЕЖЕДНЕВНАЯ НАГРАДА", 24,
+                FontStyle.Bold, TextAnchor.MiddleCenter);
+            UIFactory.SetRect(heading.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f), new Vector2(0f, -20f), new Vector2(-30f, 42f));
+            heading.color = new Color(1f, 0.82f, 0.32f);
+
+            dailyRewardText = UIFactory.Text(
+                "Reward", card.transform, "", 18, FontStyle.Normal, TextAnchor.MiddleCenter);
+            UIFactory.SetOffsets(dailyRewardText.rectTransform, Vector2.zero, Vector2.one,
+                new Vector2(28f, 92f), new Vector2(-28f, -72f));
+
+            Button claim = UIFactory.Button(
+                "Claim", card.transform, "ПОЛУЧИТЬ", new Color(0.28f, 0.65f, 0.43f));
+            UIFactory.SetRect(claim.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(1f, 0f),
+                new Vector2(-8f, 22f), new Vector2(170f, 46f));
+            claim.onClick.AddListener(ClaimDailyReward);
+
+            Button later = UIFactory.Button(
+                "Later", card.transform, "ПОЗЖЕ", new Color(0.34f, 0.38f, 0.46f));
+            UIFactory.SetRect(later.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f),
+                new Vector2(8f, 22f), new Vector2(150f, 46f));
+            later.onClick.AddListener(HideDailyReward);
+            dailyRewardPanel.SetActive(false);
         }
 
         private void BuildAdoptionDialog(Transform parent)
@@ -552,8 +810,25 @@ namespace Monstrology
 
         public void OpenAchievements()
         {
+            if (isPaused)
+            {
+                pausePanel.SetActive(false);
+                settingsPanel.SetActive(false);
+            }
+
             OpenPanel(achievementPanel);
             achievementUI.Rebuild();
+        }
+
+        public void OpenNest(CreatureNestProgress progress)
+        {
+            if (progress == null || nestUI == null)
+            {
+                return;
+            }
+
+            OpenPanel(nestPanel);
+            nestUI.Show(progress);
         }
 
         private void RebuildQuests()
@@ -633,7 +908,9 @@ namespace Monstrology
             Color tint = game.CurrentBiome.fallbackColor;
             tint.a = 0.06f;
             background.color = tint;
-            background.sprite = null;
+            background.sprite = SpriteDatabase.Active.GetBiomeBackground(
+                game.CurrentBiome,
+                game.CurrentBiome.mapData);
         }
 
         private void RefreshEnergyText()
@@ -695,6 +972,16 @@ namespace Monstrology
             {
                 resultCard.SetActive(false);
             }
+
+            if (game != null && !game.IntroCompleted)
+            {
+                introPanel.SetActive(true);
+                SetWorldInputEnabled(false);
+            }
+            else
+            {
+                ShowDailyRewardIfAvailable();
+            }
         }
 
         private IEnumerator HideResultCardAfterDelay()
@@ -739,12 +1026,27 @@ namespace Monstrology
 
         private void OpenPanel(GameObject panel)
         {
-            CloseAllPanels();
+            HideStandardPanels();
             panel.SetActive(true);
             SetWorldInputEnabled(false);
         }
 
         public void CloseAllPanels()
+        {
+            HideStandardPanels();
+            if (isPaused)
+            {
+                settingsPanel.SetActive(false);
+                pausePanel.SetActive(true);
+                RefreshPauseStatistics();
+                SetWorldInputEnabled(false);
+                return;
+            }
+
+            SetWorldInputEnabled(true);
+        }
+
+        private void HideStandardPanels()
         {
             encyclopediaPanel.SetActive(false);
             biomePanel.SetActive(false);
@@ -753,11 +1055,15 @@ namespace Monstrology
             accessoryPanel.SetActive(false);
             breedingPanel.SetActive(false);
             achievementPanel.SetActive(false);
-            SetWorldInputEnabled(true);
+            nestPanel.SetActive(false);
         }
 
         private void SetWorldInputEnabled(bool value)
         {
+            bool overlayBlocksInput = isPaused ||
+                                      (introPanel != null && introPanel.activeSelf) ||
+                                      (dailyRewardPanel != null && dailyRewardPanel.activeSelf);
+            value = value && !overlayBlocksInput;
             if (player != null)
             {
                 player.EnableMovement(value);
@@ -767,6 +1073,196 @@ namespace Monstrology
             {
                 interaction.EnableInteraction(value);
             }
+        }
+
+        public void TogglePause()
+        {
+            if ((introPanel != null && introPanel.activeSelf) ||
+                (dailyRewardPanel != null && dailyRewardPanel.activeSelf))
+            {
+                return;
+            }
+
+            if (isPaused)
+            {
+                ResumeGame();
+            }
+            else
+            {
+                OpenPause();
+            }
+        }
+
+        private void HandleEscape()
+        {
+            if (introPanel != null && introPanel.activeSelf)
+            {
+                return;
+            }
+
+            if (dailyRewardPanel != null && dailyRewardPanel.activeSelf)
+            {
+                HideDailyReward();
+                return;
+            }
+
+            if (settingsPanel != null && settingsPanel.activeSelf)
+            {
+                ShowPauseMain();
+                return;
+            }
+
+            if (HasOpenStandardPanel())
+            {
+                CloseAllPanels();
+                return;
+            }
+
+            TogglePause();
+        }
+
+        private bool HasOpenStandardPanel()
+        {
+            return (encyclopediaPanel != null && encyclopediaPanel.activeSelf) ||
+                   (biomePanel != null && biomePanel.activeSelf) ||
+                   (questPanel != null && questPanel.activeSelf) ||
+                   (petsPanel != null && petsPanel.activeSelf) ||
+                   (accessoryPanel != null && accessoryPanel.activeSelf) ||
+                   (breedingPanel != null && breedingPanel.activeSelf) ||
+                   (achievementPanel != null && achievementPanel.activeSelf) ||
+                   (nestPanel != null && nestPanel.activeSelf);
+        }
+
+        private void OpenPause()
+        {
+            HideStandardPanels();
+            isPaused = true;
+            timeScaleBeforePause = Time.timeScale;
+            Time.timeScale = 0f;
+            settingsPanel.SetActive(false);
+            pausePanel.SetActive(true);
+            RefreshPauseStatistics();
+            SetWorldInputEnabled(false);
+        }
+
+        private void ResumeGame()
+        {
+            pausePanel.SetActive(false);
+            settingsPanel.SetActive(false);
+            HideStandardPanels();
+            isPaused = false;
+            Time.timeScale = timeScaleBeforePause > 0f ? timeScaleBeforePause : 1f;
+            SetWorldInputEnabled(true);
+        }
+
+        private void OpenSettingsFromPause()
+        {
+            pausePanel.SetActive(false);
+            settingsPanel.SetActive(true);
+            SetWorldInputEnabled(false);
+        }
+
+        private void ShowPauseMain()
+        {
+            settingsPanel.SetActive(false);
+            pausePanel.SetActive(true);
+            RefreshPauseStatistics();
+            SetWorldInputEnabled(false);
+        }
+
+        private void RefreshPauseStatistics()
+        {
+            if (pauseStatsText == null || game == null)
+            {
+                return;
+            }
+
+            CreatureInstance favorite = petCollection != null ? petCollection.GetFavorite() : null;
+            CreatureData favoriteSpecies = favorite != null
+                ? game.GetCreature(favorite.speciesId)
+                : null;
+            pauseStatsText.text =
+                "СТАТИСТИКА ИССЛЕДОВАТЕЛЯ\n" +
+                "Исследований: " + game.ExplorationCount +
+                "    Существ найдено: " + game.TotalCreaturesFound + "\n" +
+                "Питомцев: " + (petCollection != null ? petCollection.Count : 0) +
+                "    Биомов открыто: " + game.GetUnlockedBiomeCount() + "/" +
+                game.Content.biomes.Count + "\n" +
+                "Достижений: " + game.GetUnlockedAchievements().Count + "/" +
+                (achievements != null ? achievements.GetDefinitions().Count : 0) + "\n" +
+                "Любимчик: " +
+                (favorite != null ? favorite.GetDisplayName(favoriteSpecies) : "не выбран") + "\n" +
+                "Энциклопедия: " +
+                Mathf.RoundToInt(game.GetEncyclopediaCompletion01() * 100f) + "%";
+        }
+
+        private void CompleteIntro()
+        {
+            if (game != null)
+            {
+                game.CompleteIntro(25, 25);
+            }
+
+            introPanel.SetActive(false);
+            SetWorldInputEnabled(true);
+            ShowNotification(
+                "Первая цель: исследуйте Лес и найдите первое существо. Получено +25 энергии и +25 монет.");
+            ShowDailyRewardIfAvailable();
+        }
+
+        private void ShowDailyRewardIfAvailable()
+        {
+            if (dailyRewards == null || !dailyRewards.CanClaimToday ||
+                dailyRewardPanel == null)
+            {
+                return;
+            }
+
+            int day = dailyRewards.NextRewardDay;
+            dailyRewardText.text = "День " + day + " из 7\n" +
+                                   dailyRewards.GetRewardDescription(day) +
+                                   "\nПосле седьмого дня цикл начнётся снова.";
+            dailyRewardPanel.SetActive(true);
+            SetWorldInputEnabled(false);
+        }
+
+        private void ClaimDailyReward()
+        {
+            if (dailyRewards == null)
+            {
+                return;
+            }
+
+            string message;
+            dailyRewards.Claim(out message);
+            dailyRewardPanel.SetActive(false);
+            SetWorldInputEnabled(true);
+        }
+
+        private void HideDailyReward()
+        {
+            if (dailyRewardPanel != null)
+            {
+                dailyRewardPanel.SetActive(false);
+            }
+
+            SetWorldInputEnabled(true);
+        }
+
+        private void ExitGame()
+        {
+            if (game != null)
+            {
+                game.SaveNow();
+            }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+            ShowNotification("Прогресс сохранён. Можно закрыть вкладку.");
+#elif UNITY_EDITOR
+            Debug.Log("Exit requested. Progress saved; stop Play Mode from the Unity Editor.");
+#else
+            Application.Quit();
+#endif
         }
 
         private static void EnsureEventSystem()
@@ -784,7 +1280,6 @@ namespace Monstrology
     internal static class UIFactory
     {
         private static Font cachedFont;
-        private static Sprite roundedSprite;
 
         public static GameObject Object(string name, Transform parent)
         {
@@ -911,6 +1406,41 @@ namespace Monstrology
             dropdown.template = template.rectTransform;
             dropdown.itemText = itemLabel;
             return dropdown;
+        }
+
+        public static Slider Slider(string name, Transform parent)
+        {
+            GameObject root = Object(name, parent);
+            Slider slider = root.AddComponent<Slider>();
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.wholeNumbers = false;
+
+            Image background = Image("Background", root.transform, new Color(0.18f, 0.22f, 0.3f));
+            ApplyRounded(background);
+            SetRect(background.rectTransform, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(0f, 10f));
+
+            GameObject fillArea = Object("Fill Area", root.transform);
+            SetOffsets(fillArea.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(1f, 1f),
+                new Vector2(6f, 6f), new Vector2(-6f, -6f));
+            Image fill = Image("Fill", fillArea.transform, new Color(0.32f, 0.7f, 0.94f));
+            ApplyRounded(fill);
+            Stretch(fill.rectTransform);
+
+            GameObject handleArea = Object("Handle Slide Area", root.transform);
+            SetOffsets(handleArea.GetComponent<RectTransform>(), Vector2.zero, Vector2.one,
+                new Vector2(8f, 0f), new Vector2(-8f, 0f));
+            Image handle = Image("Handle", handleArea.transform, new Color(0.95f, 0.97f, 1f));
+            handle.sprite = SpriteDatabase.Active.GetJoystickHandle();
+            SetRect(handle.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(24f, 24f));
+
+            slider.fillRect = fill.rectTransform;
+            slider.handleRect = handle.rectTransform;
+            slider.targetGraphic = handle;
+            slider.direction = UnityEngine.UI.Slider.Direction.LeftToRight;
+            return slider;
         }
 
         public static InputField InputField(
@@ -1040,48 +1570,7 @@ namespace Monstrology
 
         private static Sprite RoundedSprite
         {
-            get
-            {
-                if (roundedSprite != null)
-                {
-                    return roundedSprite;
-                }
-
-                const int size = 32;
-                const int radius = 9;
-                Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-                texture.name = "Runtime Rounded UI";
-                texture.hideFlags = HideFlags.DontSave;
-                texture.filterMode = FilterMode.Bilinear;
-                Color[] pixels = new Color[size * size];
-
-                for (int y = 0; y < size; y++)
-                {
-                    for (int x = 0; x < size; x++)
-                    {
-                        int cornerX = x < radius ? radius : x >= size - radius ? size - radius - 1 : x;
-                        int cornerY = y < radius ? radius : y >= size - radius ? size - radius - 1 : y;
-                        float distance = Vector2.Distance(new Vector2(x, y), new Vector2(cornerX, cornerY));
-                        pixels[y * size + x] = distance <= radius
-                            ? Color.white
-                            : new Color(1f, 1f, 1f, 0f);
-                    }
-                }
-
-                texture.SetPixels(pixels);
-                texture.Apply();
-                roundedSprite = Sprite.Create(
-                    texture,
-                    new Rect(0f, 0f, size, size),
-                    new Vector2(0.5f, 0.5f),
-                    100f,
-                    0,
-                    SpriteMeshType.FullRect,
-                    new Vector4(radius, radius, radius, radius));
-                roundedSprite.name = "Runtime Rounded UI";
-                roundedSprite.hideFlags = HideFlags.DontSave;
-                return roundedSprite;
-            }
+            get { return SpriteDatabase.Active.GetRoundedPanel(); }
         }
     }
 }

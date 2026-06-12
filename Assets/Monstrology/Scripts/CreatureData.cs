@@ -88,7 +88,16 @@ namespace Monstrology
         public CreatureElement element;
         public BiomeType biome;
 
+        [Header("Standard creature visuals")]
+        [Tooltip("Front-facing 2048x2048 portrait with 10% transparent safe margins.")]
+        public Sprite portraitSprite;
+        [Tooltip("Front-facing world sprite using the same proportions as the portrait.")]
+        public Sprite worldSprite;
+        [Tooltip("Optional special sprite used in evolution presentation.")]
+        public Sprite evolutionSprite;
+
         [Header("Discovery")]
+        [Tooltip("Legacy portrait fallback. Kept for existing authored content.")]
         public Sprite icon;
         [Min(0.01f)] public float appearanceChance = 1f;
         public List<AppearanceCondition> appearanceConditions = new List<AppearanceCondition>();

@@ -20,9 +20,9 @@ namespace Monstrology
     [Serializable]
     public class GameProgress
     {
-        public int version = 6;
-        public int coins = 120;
-        public int energy = 20;
+        public int version = 8;
+        public int coins = SaveSystem.DefaultCoins;
+        public int energy = SaveSystem.DefaultEnergy;
         public string currentBiome = BiomeType.Forest.ToString();
         public int explorationCount;
         public int mutationCount;
@@ -34,6 +34,7 @@ namespace Monstrology
         public List<StringIntEntry> tracks = new List<StringIntEntry>();
         public List<string> claimedQuests = new List<string>();
         public List<string> purchasedHints = new List<string>();
+        public List<StringIntEntry> hintLevels = new List<StringIntEntry>();
         public List<CreatureInstance> pets = new List<CreatureInstance>();
         public List<string> accessories = new List<string>();
         public string timeOfDay = TimeOfDay.Day.ToString();
@@ -49,10 +50,15 @@ namespace Monstrology
         public List<string> completedSignatureSets = new List<string>();
         public List<string> activeSignatureBonuses = new List<string>();
         public List<string> foundBiomeEvents = new List<string>();
+        public bool introCompleted;
+        public string lastDailyRewardUtcDate;
+        public int dailyRewardStreak;
     }
 
     public static class SaveSystem
     {
+        public const int DefaultCoins = 50;
+        public const int DefaultEnergy = 75;
         private const string SaveKey = "Monstrology.Progress.v1";
 
         public static void Save(GameProgress progress)

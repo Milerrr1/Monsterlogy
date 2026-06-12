@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -26,17 +27,46 @@ namespace Monstrology
             collection = collectionManager;
             breeding = breedingSystem;
             content = contentRoot;
+            if (game != null)
+            {
+                game.CreatureRegistered -= HandleCreatureRegistered;
+                game.CreatureRegistered += HandleCreatureRegistered;
+            }
+
+            if (collection != null)
+            {
+                collection.CollectionChanged -= HandleCollectionChanged;
+                collection.CollectionChanged += HandleCollectionChanged;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (game != null)
+            {
+                game.CreatureRegistered -= HandleCreatureRegistered;
+            }
+
+            if (collection != null)
+            {
+                collection.CollectionChanged -= HandleCollectionChanged;
+            }
         }
 
         public void Rebuild()
         {
             UIFactory.ClearChildren(content);
             speciesIds.Clear();
-            foreach (SpeciesEvolutionData evolution in game.Content.speciesEvolutions)
+            foreach (CreatureData creature in game.Content.creatures
+                         .Where(creature => creature != null &&
+                                            !string.IsNullOrEmpty(creature.id) &&
+                                            (game.IsCreatureFound(creature.id) ||
+                                             collection.GetPetBySpecies(creature.id) != null))
+                         .OrderBy(creature => creature.creatureName))
             {
-                if (evolution != null && game.GetCreatureCount(evolution.baseSpeciesId) > 0)
+                if (!speciesIds.Contains(creature.id))
                 {
-                    speciesIds.Add(evolution.baseSpeciesId);
+                    speciesIds.Add(creature.id);
                 }
             }
 
@@ -60,7 +90,11 @@ namespace Monstrology
 
             if (speciesIds.Count == 0)
             {
-                UIFactory.Label(content, "Пока нет найденных видов с доступной эволюцией.", 20, 90f);
+                UIFactory.Label(
+                    content,
+                    "Пока нет открытых видов.\nСледы часто ведут к редким существам.",
+                    20,
+                    110f);
                 return;
             }
 
@@ -104,20 +138,33 @@ namespace Monstrology
         private void Refresh()
         {
             SpeciesEvolutionData evolution = game.GetEvolution(selectedSpeciesId);
-            if (evolution == null || details == null)
+            if (details == null)
             {
                 return;
             }
 
-            CreatureData current = game.GetCreature(evolution.baseSpeciesId);
+            CreatureData current = game.GetCreature(selectedSpeciesId);
+            int copies = game.GetCreatureCount(selectedSpeciesId);
+            if (evolution == null || string.IsNullOrEmpty(evolution.resultSpeciesId))
+            {
+                details.text = "Текущий вид: " +
+                               (current != null ? current.creatureName : selectedSpeciesId) +
+                               "\nКопий собрано: " + copies +
+                               "\nМаксимальная форма достигнута.";
+                evolveButton.interactable = false;
+                result.text = "Для этого вида следующая форма не настроена.";
+                result.color = new Color(0.72f, 0.78f, 0.86f);
+                return;
+            }
+
             CreatureData next = game.GetCreature(evolution.resultSpeciesId);
-            int copies = game.GetCreatureCount(evolution.baseSpeciesId);
             float progress = evolution.requiredCopies > 0
                 ? Mathf.Clamp01((float)copies / evolution.requiredCopies)
                 : 1f;
-            details.text = "Текущий вид: " + (current != null ? current.creatureName : evolution.baseSpeciesId) +
+            details.text = "Текущий вид: " + (current != null ? current.creatureName : selectedSpeciesId) +
                            "\nКоличество экземпляров: " + copies + " / " + evolution.requiredCopies +
-                           "\nСледующая форма: " + (next != null ? next.creatureName : evolution.resultSpeciesId) +
+                           "\nСледующая форма: " +
+                           (next != null ? next.creatureName : "данные формы отсутствуют") +
                            "\nПрогресс: " + Mathf.RoundToInt(progress * 100f) + "%";
 
             string reason;
@@ -136,6 +183,24 @@ namespace Monstrology
                 ? new Color(0.48f, 0.95f, 0.62f)
                 : new Color(1f, 0.62f, 0.48f);
             Rebuild();
+        }
+
+        private void HandleCreatureRegistered(CreatureData creature, bool firstDiscovery)
+        {
+            RebuildIfVisible();
+        }
+
+        private void HandleCollectionChanged()
+        {
+            RebuildIfVisible();
+        }
+
+        private void RebuildIfVisible()
+        {
+            if (content != null && content.gameObject.activeInHierarchy)
+            {
+                Rebuild();
+            }
         }
     }
 }

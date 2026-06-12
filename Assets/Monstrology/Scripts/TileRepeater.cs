@@ -25,7 +25,11 @@ namespace Monstrology
             target = followTarget;
             tileSize = new Vector2(Mathf.Max(1f, size.x), Mathf.Max(1f, size.y));
             origin = worldOrigin;
-            EnsurePool(sprite != null ? sprite : WorldPlaceholderSprites.Square, color);
+            EnsurePool(
+                sprite != null
+                    ? sprite
+                    : SpriteDatabase.Active.GetBiomeBackground(null, null),
+                color);
             RefreshTiles(true);
         }
 
