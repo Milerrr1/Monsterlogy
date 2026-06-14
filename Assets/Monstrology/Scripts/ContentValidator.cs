@@ -109,6 +109,25 @@ namespace Monstrology
                 }
             }
 
+            foreach (ItemData item in content.items)
+            {
+                if (item == null ||
+                    string.IsNullOrEmpty(item.requiredSpeciesId))
+                {
+                    continue;
+                }
+
+                if (!creatureIds.Contains(item.requiredSpeciesId))
+                {
+                    Warn(
+                        "Item links to a missing creature: " +
+                        item.id +
+                        " -> " +
+                        item.requiredSpeciesId,
+                        ref warnings);
+                }
+            }
+
             foreach (AccessoryData accessory in content.accessories)
             {
                 if (accessory == null || !accessory.IsSignature)

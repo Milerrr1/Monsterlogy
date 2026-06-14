@@ -88,7 +88,9 @@ namespace Monstrology
 
             game.RaiseNotification(
                 "Буст новичка: +2 энергии" +
-                (resource != null ? ", +1 " + resource.itemName : "") +
+                (resource != null
+                    ? ", +1 " + resource.GetVisibleName(game)
+                    : "") +
                 (index % 3 == 0 ? ", бонусная встреча" : "") + ".");
         }
 

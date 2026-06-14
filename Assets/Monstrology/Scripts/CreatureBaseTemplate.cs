@@ -132,6 +132,8 @@ namespace Monstrology
         [SerializeField] private Transform bodyAnchor;
         [SerializeField] private Transform legAnchor;
 
+        private CreatureData currentCreature;
+
         public SpriteRenderer CreatureRenderer { get { return creatureRenderer; } }
         public Transform HeadAnchor { get { return headAnchor; } }
         public Transform BodyAnchor { get { return bodyAnchor; } }
@@ -166,13 +168,13 @@ namespace Monstrology
 
             headAnchor = EnsureAnchor(
                 HeadAnchorName,
-                template.GetAnchorPosition(AccessorySlot.Head));
+                GetAnchorPosition(template, AccessorySlot.Head));
             bodyAnchor = EnsureAnchor(
                 BodyAnchorName,
-                template.GetAnchorPosition(AccessorySlot.Body));
+                GetAnchorPosition(template, AccessorySlot.Body));
             legAnchor = EnsureAnchor(
                 LegAnchorName,
-                template.GetAnchorPosition(AccessorySlot.Legs));
+                GetAnchorPosition(template, AccessorySlot.Legs));
         }
 
         public void ApplyCreature(
@@ -180,6 +182,7 @@ namespace Monstrology
             Color fallbackColor,
             int sortingOrder = 19)
         {
+            currentCreature = creature;
             EnsureStructure();
             creatureRenderer.sprite = SpriteDatabase.Active.GetCreatureWorld(creature);
             creatureRenderer.color = SpriteDatabase.Active.HasCreatureArtwork(creature)
@@ -221,8 +224,57 @@ namespace Monstrology
                 renderer.sortingOrder = sortingOrder + index++;
                 FitRenderer(
                     renderer,
-                    CreatureBaseTemplate.Active.GetAccessorySize(accessory.slot));
+                    CreatureBaseTemplate.Active.GetAccessorySize(accessory.slot),
+                    accessory.GetWorldVisualScale());
+                Vector2 offset = accessory.GetWorldVisualOffset();
+                Vector2 slotSize =
+                    CreatureBaseTemplate.Active.GetAccessorySize(accessory.slot);
+                renderer.transform.localPosition = new Vector3(
+                    offset.x * slotSize.x,
+                    offset.y * slotSize.y,
+                    0f);
             }
+        }
+
+        public bool HasVisibleAccessory(string accessoryId)
+        {
+            if (string.IsNullOrEmpty(accessoryId))
+            {
+                return false;
+            }
+
+            EnsureStructure();
+            foreach (AccessorySlot slot in
+                     (AccessorySlot[])Enum.GetValues(typeof(AccessorySlot)))
+            {
+                Transform anchor = GetAnchor(slot);
+                if (anchor == null)
+                {
+                    continue;
+                }
+
+                for (int index = 0; index < anchor.childCount; index++)
+                {
+                    Transform child = anchor.GetChild(index);
+                    SpriteRenderer renderer =
+                        child.GetComponent<SpriteRenderer>();
+                    if (child.name.EndsWith(
+                            "_" + accessoryId,
+                            StringComparison.Ordinal) &&
+                        child.gameObject.activeInHierarchy &&
+                        renderer != null &&
+                        renderer.enabled &&
+                        renderer.sprite != null &&
+                        renderer.color.a > 0.01f &&
+                        renderer.sortingOrder > creatureRenderer.sortingOrder &&
+                        child.localScale.sqrMagnitude > 0.0001f)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         public static string GetAnchorName(AccessorySlot slot)
@@ -277,6 +329,18 @@ namespace Monstrology
             return anchor;
         }
 
+        private Vector3 GetAnchorPosition(
+            CreatureBaseTemplate template,
+            AccessorySlot slot)
+        {
+            Vector3 position = template.GetAnchorPosition(slot);
+            Vector2 offset =
+                SpriteDatabase.Active.GetCreatureAnchorOffset(currentCreature, slot);
+            position.x += offset.x;
+            position.y += offset.y;
+            return position;
+        }
+
         private static void ClearAnchor(Transform anchor)
         {
             if (anchor == null)
@@ -292,6 +356,14 @@ namespace Monstrology
 
         private static void FitRenderer(SpriteRenderer renderer, Vector2 targetSize)
         {
+            FitRenderer(renderer, targetSize, Vector2.one);
+        }
+
+        private static void FitRenderer(
+            SpriteRenderer renderer,
+            Vector2 targetSize,
+            Vector2 visualScale)
+        {
             if (renderer == null || renderer.sprite == null)
             {
                 return;
@@ -303,7 +375,13 @@ namespace Monstrology
                 targetSize.y / Mathf.Max(0.001f, size.y));
             renderer.transform.localPosition = Vector3.zero;
             renderer.transform.localRotation = Quaternion.identity;
-            renderer.transform.localScale = Vector3.one * scale;
+            Vector2 safeScale = new Vector2(
+                Mathf.Max(0.01f, Mathf.Abs(visualScale.x)),
+                Mathf.Max(0.01f, Mathf.Abs(visualScale.y)));
+            renderer.transform.localScale = new Vector3(
+                scale * safeScale.x,
+                scale * safeScale.y,
+                1f);
         }
     }
 }

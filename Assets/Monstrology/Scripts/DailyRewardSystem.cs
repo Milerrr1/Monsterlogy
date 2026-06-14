@@ -11,6 +11,7 @@ namespace Monstrology
 
         private GameManager game;
         private AccessoryInventoryManager inventory;
+        private Func<DateTime> utcNow;
 
         public int NextRewardDay
         {
@@ -18,7 +19,7 @@ namespace Monstrology
             {
                 DateTime lastClaim;
                 if (!TryGetLastClaim(out lastClaim) ||
-                    lastClaim.Date != DateTime.UtcNow.Date.AddDays(-1))
+                    lastClaim.Date != UtcNow.Date.AddDays(-1))
                 {
                     return 1;
                 }
@@ -31,18 +32,41 @@ namespace Monstrology
         {
             get
             {
+                if (game == null ||
+                    !game.DailyRewardFirstLaunchRegistered)
+                {
+                    return false;
+                }
+
+                DateTime firstLaunch;
+                if (!TryGetFirstLaunch(out firstLaunch) ||
+                    UtcNow.Date <= firstLaunch.Date)
+                {
+                    return false;
+                }
+
                 DateTime lastClaim;
                 return !TryGetLastClaim(out lastClaim) ||
-                       lastClaim.Date < DateTime.UtcNow.Date;
+                       lastClaim.Date < UtcNow.Date;
             }
         }
 
         public void Initialize(
             GameManager gameManager,
-            AccessoryInventoryManager inventoryManager)
+            AccessoryInventoryManager inventoryManager,
+            Func<DateTime> utcNowProvider = null)
         {
             game = gameManager;
             inventory = inventoryManager;
+            utcNow = utcNowProvider;
+            if (game != null &&
+                !game.DailyRewardFirstLaunchRegistered)
+            {
+                game.RegisterDailyRewardFirstLaunch(
+                    UtcNow.ToString(
+                        DateFormat,
+                        CultureInfo.InvariantCulture));
+            }
         }
 
         public string GetRewardDescription(int day)
@@ -70,7 +94,7 @@ namespace Monstrology
             int day = NextRewardDay;
             GrantReward(day, out message);
             game.SaveDailyReward(
-                DateTime.UtcNow.ToString(DateFormat, CultureInfo.InvariantCulture),
+                UtcNow.ToString(DateFormat, CultureInfo.InvariantCulture),
                 day);
             game.RaiseNotification("Ежедневная награда: " + message + ".");
             return true;
@@ -116,19 +140,13 @@ namespace Monstrology
                 (game.CurrentBiome == null || item.preferredBiome == game.CurrentBiome.type));
             if (candidates.Count == 0)
             {
-                candidates = game.Content.items.FindAll(item =>
-                    item != null && item.kind != ItemKind.Egg);
-            }
-
-            if (candidates.Count == 0)
-            {
                 game.AddCoins(rare ? 180 : 80);
                 return rare ? "+180 монет" : "+80 монет";
             }
 
             ItemData selected = candidates[UnityEngine.Random.Range(0, candidates.Count)];
             game.AddItem(selected.id, amount);
-            return "+" + amount + " " + selected.itemName;
+            return "+" + amount + " " + selected.GetVisibleName(game);
         }
 
         private string GrantAccessory(bool rare)
@@ -165,6 +183,27 @@ namespace Monstrology
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal,
                 out date);
+        }
+
+        private bool TryGetFirstLaunch(out DateTime date)
+        {
+            date = DateTime.MinValue;
+            return game != null && DateTime.TryParseExact(
+                game.DailyRewardFirstLaunchUtcDate,
+                DateFormat,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal,
+                out date);
+        }
+
+        private DateTime UtcNow
+        {
+            get
+            {
+                return utcNow != null
+                    ? utcNow().ToUniversalTime()
+                    : DateTime.UtcNow;
+            }
         }
     }
 }

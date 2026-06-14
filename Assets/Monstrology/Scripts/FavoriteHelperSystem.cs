@@ -79,7 +79,9 @@ namespace Monstrology
                 {
                     game.AddItem(resource.id);
                     game.RaiseNotification(favorite.GetDisplayName(game.GetCreature(favorite.speciesId)) +
-                                           " нашёл: " + resource.itemName + ".");
+                                           " нашёл: " +
+                                           resource.GetVisibleName(game) +
+                                           ".");
                 }
             }
             else if (action == 2 && world != null)

@@ -68,7 +68,18 @@ namespace Monstrology
                 return false;
             }
 
-            int copies = game.GetCreatureCount(speciesId);
+            CreatureInstance pet = FindPetForEvolution(speciesId);
+            if (pet == null)
+            {
+                reason = "Для эволюции нужен питомец текущей формы.";
+                return false;
+            }
+
+            string rootSpeciesId = string.IsNullOrEmpty(
+                pet.evolutionRootSpeciesId)
+                ? game.GetEvolutionRootSpeciesId(speciesId)
+                : pet.evolutionRootSpeciesId;
+            int copies = game.GetLifetimeCreatureCount(rootSpeciesId);
             if (copies < evolution.requiredCopies)
             {
                 reason = "Недостаточно копий: " + copies + " / " + evolution.requiredCopies + ".";
@@ -101,12 +112,6 @@ namespace Monstrology
             }
 
             SpeciesEvolutionData evolution = game.GetEvolution(speciesId);
-            if (!game.ConsumeCreatureCopies(speciesId, evolution.requiredCopies))
-            {
-                LastMessage = "Не удалось списать копии вида.";
-                return null;
-            }
-
             CreatureInstance pet = FindPetForEvolution(speciesId);
             CreatureData oldSpecies = game.GetCreature(speciesId);
             CreatureData resultSpecies = game.GetCreature(evolution.resultSpeciesId);
@@ -120,7 +125,7 @@ namespace Monstrology
                                        (oldSpecies != null && pet.customName == oldSpecies.creatureName);
                 pet.speciesId = evolution.resultSpeciesId;
                 pet.evolutionRootSpeciesId = string.IsNullOrEmpty(pet.evolutionRootSpeciesId)
-                    ? speciesId
+                    ? game.GetEvolutionRootSpeciesId(speciesId)
                     : pet.evolutionRootSpeciesId;
                 pet.evolutionStage++;
                 pet.generation = Mathf.Max(pet.generation, pet.evolutionStage);

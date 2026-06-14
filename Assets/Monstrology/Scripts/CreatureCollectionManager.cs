@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using UnityEngine;
 
 namespace Monstrology
@@ -10,6 +11,8 @@ namespace Monstrology
         public const int ExplorationExperience = 5;
         public const int CreatureExperience = 15;
         public const int BiomeUnlockExperience = 40;
+        public const int MaxCustomNameLength = 24;
+        public const int CurrentPetMigrationVersion = 1;
 
         private readonly List<CreatureInstance> pets = new List<CreatureInstance>();
         private GameManager game;
@@ -30,6 +33,7 @@ namespace Monstrology
             if (game != null)
             {
                 game.ProgressReset += HandleProgressReset;
+                game.CreatureRegistered += HandleCreatureRegistered;
             }
         }
 
@@ -63,9 +67,9 @@ namespace Monstrology
                 speciesId = species.id,
                 evolutionRootSpeciesId = species.id,
                 evolutionStage = 0,
-                customName = string.IsNullOrWhiteSpace(customName)
-                    ? species.creatureName
-                    : customName.Trim(),
+                customName = SanitizeCustomName(
+                    customName,
+                    species.creatureName),
                 level = 1,
                 experience = 0,
                 rarity = RollRarity(species),
@@ -207,11 +211,58 @@ namespace Monstrology
             }
 
             CreatureData species = game != null ? game.GetCreature(pet.speciesId) : null;
-            pet.customName = string.IsNullOrWhiteSpace(customName)
-                ? species != null ? species.creatureName : pet.speciesId
-                : customName.Trim();
+            pet.customName = SanitizeCustomName(
+                customName,
+                species != null ? species.creatureName : pet.speciesId);
             SaveCollection();
             return true;
+        }
+
+        public static string SanitizeCustomName(
+            string value,
+            string fallback)
+        {
+            StringBuilder builder = new StringBuilder();
+            bool previousWasWhitespace = false;
+            string source = value ?? string.Empty;
+            foreach (char character in source)
+            {
+                if (char.IsControl(character))
+                {
+                    continue;
+                }
+
+                if (char.IsWhiteSpace(character))
+                {
+                    if (builder.Length > 0 && !previousWasWhitespace)
+                    {
+                        builder.Append(' ');
+                    }
+
+                    previousWasWhitespace = true;
+                    continue;
+                }
+
+                builder.Append(character);
+                previousWasWhitespace = false;
+                if (builder.Length >= MaxCustomNameLength)
+                {
+                    break;
+                }
+            }
+
+            string normalized = builder.ToString().Trim();
+            if (!string.IsNullOrEmpty(normalized))
+            {
+                return normalized;
+            }
+
+            string safeFallback = string.IsNullOrWhiteSpace(fallback)
+                ? "Pet"
+                : fallback.Trim();
+            return safeFallback.Length > MaxCustomNameLength
+                ? safeFallback.Substring(0, MaxCustomNameLength)
+                : safeFallback;
         }
 
         public void AddExperienceToAll(int amount)
@@ -243,7 +294,55 @@ namespace Monstrology
             }
 
             NormalizePets();
+            RestoreMissingDiscoveredPets();
+            if (game != null)
+            {
+                game.MarkPetMigrationComplete(
+                    CurrentPetMigrationVersion);
+            }
             RaiseCollectionChanged();
+        }
+
+        private void HandleCreatureRegistered(
+            CreatureData creature,
+            bool firstDiscovery)
+        {
+            if (creature == null ||
+                string.IsNullOrEmpty(creature.id) ||
+                GetPetBySpecies(creature.id) != null)
+            {
+                return;
+            }
+
+            AddPet(creature.id);
+        }
+
+        private void RestoreMissingDiscoveredPets()
+        {
+            if (game == null || game.Content == null ||
+                game.Content.creatures == null)
+            {
+                return;
+            }
+
+            foreach (CreatureData species in game.Content.creatures)
+            {
+                if (species == null ||
+                    string.IsNullOrEmpty(species.id) ||
+                    !game.IsCreatureFound(species.id) ||
+                    GetPetBySpecies(species.id) != null)
+                {
+                    continue;
+                }
+
+                CreatureInstance restored = AddPet(species.id);
+                if (restored != null && species.id == "vacuum_rhino")
+                {
+                    Debug.Log(
+                        "[PetMigration] Restored missing pet entry for " +
+                        "vacuum_rhino.");
+                }
+            }
         }
 
         private void NormalizePets()
@@ -265,6 +364,14 @@ namespace Monstrology
 
                 pet.level = Mathf.Clamp(pet.level, 1, PetUpgradeSystem.MaxLevel);
                 pet.experience = Mathf.Max(0, pet.experience);
+                CreatureData species = game != null
+                    ? game.GetCreature(pet.speciesId)
+                    : null;
+                pet.customName = SanitizeCustomName(
+                    pet.customName,
+                    species != null
+                        ? species.creatureName
+                        : pet.speciesId);
                 pet.evolutionRootSpeciesId = string.IsNullOrEmpty(pet.evolutionRootSpeciesId)
                     ? pet.speciesId
                     : pet.evolutionRootSpeciesId;
@@ -451,6 +558,7 @@ namespace Monstrology
             }
 
             game.ProgressReset -= HandleProgressReset;
+            game.CreatureRegistered -= HandleCreatureRegistered;
         }
 
         private void MigrateEquipmentSlots(CreatureInstance pet)

@@ -24,3 +24,13 @@
 Поле `icon` остаётся резервным источником для старых ассетов. Runtime-объекты
 используют `CreatureVisualRig`, который автоматически создаёт `Visual`,
 `HeadAnchor`, `BodyAnchor` и `LegAnchor`.
+
+Первые финальные спрайты:
+
+- `Breadcat.png`: `bread_cat`, `bread_cat_ii`, `bread_cat_iii`,
+  `bread_cat_king`;
+- `VacuumRhino.png`: `vacuum_rhino`, `vacuum_rhino_ii`,
+  `vacuum_rhino_iii`, `turbo_vacuum_rhino`.
+
+До появления отдельных эволюционных изображений формы используют спрайт базового
+вида через `SpriteDatabase`.

@@ -32,12 +32,13 @@ namespace Monstrology
         private WorldExplorationManager owner;
         private SpawnPoint spawnPoint;
         private bool collected;
-        private Vector3 baseScale;
+        private Vector3 visualBaseScale = Vector3.one;
         private int trackChainStage = -1;
         private float expiresAt;
         private bool persistent;
         private string nestId;
         private TextMesh worldLabel;
+        private WorldYSorter ySorter;
 
         public static IEnumerable<WorldPickup> ActivePickups { get { return Active; } }
         public WorldPickupType PickupType { get { return pickupType; } }
@@ -51,6 +52,21 @@ namespace Monstrology
         public bool IsPersistent { get { return persistent; } }
         public string NestId { get { return nestId; } }
         public SpriteRenderer VisualRenderer { get { return visual; } }
+        public float WorldVisualMaxSize
+        {
+            get
+            {
+                if (visual == null || visual.sprite == null)
+                {
+                    return 0f;
+                }
+
+                Vector2 size = visual.sprite.bounds.size;
+                return Mathf.Max(
+                    size.x * Mathf.Abs(visual.transform.localScale.x),
+                    size.y * Mathf.Abs(visual.transform.localScale.y));
+            }
+        }
 
         public string DisplayName
         {
@@ -63,9 +79,13 @@ namespace Monstrology
                     case WorldPickupType.Trace:
                         return Localization.Track(trackType);
                     case WorldPickupType.Item:
-                        return item != null ? item.itemName : "подобрать предмет";
+                        return item != null
+                            ? item.GetVisibleName(GameManager.Instance)
+                            : "подобрать предмет";
                     case WorldPickupType.Egg:
-                        return item != null ? item.itemName : "осмотреть яйцо";
+                        return item != null
+                            ? item.GetVisibleName(GameManager.Instance)
+                            : "осмотреть яйцо";
                     case WorldPickupType.Accessory:
                         return accessory != null ? accessory.displayName : "подобрать одежду";
                     case WorldPickupType.CreatureNest:
@@ -92,7 +112,6 @@ namespace Monstrology
                 visual = GetComponentInChildren<SpriteRenderer>();
             }
 
-            baseScale = transform.localScale;
         }
 
         private void OnEnable()
@@ -120,7 +139,10 @@ namespace Monstrology
             }
 
             float pulse = 1f + Mathf.Sin(Time.time * 2.4f + transform.position.x) * 0.045f;
-            transform.localScale = baseScale * pulse;
+            if (visual != null)
+            {
+                visual.transform.localScale = visualBaseScale * pulse;
+            }
         }
 
         private void OnDestroy()
@@ -250,12 +272,67 @@ namespace Monstrology
 
                 rig.ApplyCreature(creature, GetColor(), 10);
                 visual = rig.CreatureRenderer;
+                visualBaseScale = visual != null
+                    ? visual.transform.localScale
+                    : Vector3.one;
+                WorldShadowUtility.EnsureShadow(
+                    transform,
+                    new Vector2(0.62f, 0.13f),
+                    0.2f);
+                ConfigureYSorting(true);
                 return;
             }
 
             visual.sortingOrder = 10;
             visual.sprite = GetSprite();
             visual.color = GetColor();
+            ApplyWorldVisualScale();
+            ConfigureYSorting(false);
+        }
+
+        public static float CalculateWorldVisualScale(
+            Sprite sprite,
+            float targetMaxSize = 0.9f)
+        {
+            if (sprite == null)
+            {
+                return 1f;
+            }
+
+            Vector2 size = sprite.bounds.size;
+            float maxSide = Mathf.Max(size.x, size.y);
+            if (maxSide <= 0.0001f)
+            {
+                return 1f;
+            }
+
+            return Mathf.Clamp(
+                Mathf.Max(0.1f, targetMaxSize) / maxSide,
+                0.05f,
+                1.5f);
+        }
+
+        private void ApplyWorldVisualScale()
+        {
+            if (visual == null || visual.sprite == null)
+            {
+                visualBaseScale = Vector3.one;
+                return;
+            }
+
+            float scale = pickupType == WorldPickupType.Accessory
+                ? CalculateWorldVisualScale(visual.sprite)
+                : 1f;
+            visualBaseScale = Vector3.one * scale;
+            visual.transform.localScale = visualBaseScale;
+
+            CircleCollider2D circle = GetComponent<CircleCollider2D>();
+            if (circle != null)
+            {
+                Vector2 spriteSize = visual.sprite.bounds.size * scale;
+                float radius = Mathf.Max(spriteSize.x, spriteSize.y) * 0.5f;
+                circle.radius = Mathf.Clamp(radius, 0.28f, 0.55f);
+            }
         }
 
         private void BuildNestDecoration()
@@ -292,6 +369,7 @@ namespace Monstrology
                 worldLabel.fontSize = 32;
                 worldLabel.characterSize = 1f;
                 worldLabel.color = new Color(1f, 0.88f, 0.58f);
+                MonstrologyFontProvider.Apply(worldLabel);
                 MeshRenderer renderer = labelObject.GetComponent<MeshRenderer>();
                 if (renderer != null)
                 {
@@ -302,6 +380,21 @@ namespace Monstrology
             worldLabel.text = creature != null
                 ? "Логово " + creature.creatureName
                 : "Логово";
+            ConfigureYSorting(false);
+        }
+
+        private void ConfigureYSorting(bool dynamicObject)
+        {
+            if (ySorter == null)
+            {
+                ySorter = GetComponent<WorldYSorter>();
+                if (ySorter == null)
+                {
+                    ySorter = gameObject.AddComponent<WorldYSorter>();
+                }
+            }
+
+            ySorter.Configure(dynamicObject);
         }
 
         private Sprite GetSprite()

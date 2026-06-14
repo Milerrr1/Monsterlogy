@@ -24,6 +24,7 @@ namespace Monstrology
         public Sprite icon;
         public Color accentColor;
         public CreatureData creature;
+        public ItemData item;
         public AccessoryData accessory;
         public bool firstSpeciesDiscovery;
     }
@@ -34,6 +35,7 @@ namespace Monstrology
 
         private GameManager game;
         private AccessoryInventoryManager accessoryInventory;
+        private FirstSessionDirector firstSessionDirector;
 
         public void Initialize(
             GameManager gameManager,
@@ -41,6 +43,12 @@ namespace Monstrology
         {
             game = gameManager;
             accessoryInventory = accessoryInventoryManager;
+        }
+
+        public void SetFirstSessionDirector(
+            FirstSessionDirector director)
+        {
+            firstSessionDirector = director;
         }
 
         public void Explore()
@@ -148,6 +156,11 @@ namespace Monstrology
             foreach (CreatureData creature in candidates)
             {
                 float weight = Mathf.Max(0.01f, creature.appearanceChance) * GetRarityWeight(creature.rarity);
+                if (firstSessionDirector != null)
+                {
+                    weight *= firstSessionDirector
+                        .GetCreatureWeightMultiplier(creature);
+                }
                 if (trackBonus && creature.rarity != CreatureRarity.Common)
                 {
                     weight *= 1.75f;
@@ -164,6 +177,11 @@ namespace Monstrology
 
                 weights.Add(weight);
                 totalWeight += weight;
+            }
+
+            if (totalWeight <= 0.0001f)
+            {
+                return null;
             }
 
             float selection = UnityEngine.Random.value * totalWeight;
@@ -239,27 +257,23 @@ namespace Monstrology
                 return null;
             }
 
-            List<ItemData> preferred = candidates.FindAll(item => item.preferredBiome == game.CurrentBiome.type);
-            SignatureSetSystem signatureSets = FindObjectOfType<SignatureSetSystem>();
-            FavoriteHelperSystem favoriteHelper = FindObjectOfType<FavoriteHelperSystem>();
-            BiomeEventSystem biomeEvents = FindObjectOfType<BiomeEventSystem>();
-            float preferredChance = 0.7f +
-                                    (signatureSets != null
-                                        ? signatureSets.GetResourceFindBonus(game.CurrentBiome.type)
-                                        : 0f) +
-                                    (favoriteHelper != null
-                                        ? favoriteHelper.ResourceChanceBonus
-                                        : 0f);
-            if (biomeEvents != null && biomeEvents.IsActiveFor(game.CurrentBiome.type))
+            List<ItemData> preferred = candidates.FindAll(item =>
+                item.preferredBiome == game.CurrentBiome.type);
+            if (preferred.Count == 0)
             {
-                preferredChance += 0.1f * (biomeEvents.ResourceMultiplier - 1f);
+                return null;
             }
 
-            List<ItemData> pool = preferred.Count > 0 &&
-                                  UnityEngine.Random.value < Mathf.Clamp(preferredChance, 0.1f, 0.97f)
-                ? preferred
-                : candidates;
-            return pool[UnityEngine.Random.Range(0, pool.Count)];
+            return firstSessionDirector != null
+                ? firstSessionDirector.ChooseItem(preferred)
+                : preferred[UnityEngine.Random.Range(0, preferred.Count)];
+        }
+
+        public static bool CanItemDropInBiome(
+            ItemData item,
+            BiomeType biome)
+        {
+            return item != null && item.preferredBiome == biome;
         }
 
         public TrackType SelectTrack()
@@ -300,6 +314,50 @@ namespace Monstrology
             if (candidates.Count == 0)
             {
                 return null;
+            }
+
+            if (accessoryInventory != null)
+            {
+                List<int> unownedIndexes = new List<int>();
+                for (int index = 0; index < candidates.Count; index++)
+                {
+                    if (!accessoryInventory.HasAccessory(
+                            candidates[index].id))
+                    {
+                        unownedIndexes.Add(index);
+                    }
+                }
+
+                if (unownedIndexes.Count > 0)
+                {
+                    List<AccessoryData> unowned =
+                        new List<AccessoryData>();
+                    List<float> unownedWeights = new List<float>();
+                    foreach (int index in unownedIndexes)
+                    {
+                        unowned.Add(candidates[index]);
+                        unownedWeights.Add(weights[index]);
+                    }
+
+                    candidates = unowned;
+                    weights = unownedWeights;
+                    totalWeight = 0f;
+                    foreach (float weight in weights)
+                    {
+                        totalWeight += weight;
+                    }
+                }
+            }
+
+            if (firstSessionDirector != null)
+            {
+                int selectedIndex =
+                    firstSessionDirector.ChooseAccessoryIndex(
+                        candidates,
+                        weights);
+                return selectedIndex >= 0
+                    ? candidates[selectedIndex]
+                    : null;
             }
 
             float roll = UnityEngine.Random.value * totalWeight;
@@ -433,9 +491,11 @@ namespace Monstrology
             {
                 type = egg ? ExplorationResultType.Egg : ExplorationResultType.Item,
                 title = egg ? "Загадочное яйцо" : "Полезная находка",
-                description = selected.itemName + "\n" + selected.description +
+                description = selected.GetVisibleName(game) + "\n" +
+                              selected.GetVisibleDescription(game) +
                               "\nВ инвентаре: " + game.GetItemCount(selected.id),
                 icon = SpriteDatabase.Active.GetItem(selected),
+                item = selected,
                 accentColor = egg
                     ? new Color(0.78f, 0.59f, 0.96f)
                     : new Color(0.35f, 0.78f, 0.62f)

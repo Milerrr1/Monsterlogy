@@ -9,6 +9,8 @@ namespace Monstrology
 {
     public class UIManager : MonoBehaviour
     {
+        [SerializeField, Min(1)] private int rewardedEnergyAmount = 3;
+
         private GameManager game;
         private ExplorationSystem exploration;
         private QuestSystem quests;
@@ -39,6 +41,15 @@ namespace Monstrology
         private Coroutine resultHideRoutine;
         private Text tracksText;
         private Text notificationText;
+        private Button rewardEnergyButton;
+        private Text titleText;
+        private RectTransform safeAreaRoot;
+        private RectTransform topBarRoot;
+        private RectTransform bottomBarRoot;
+        private RectTransform mobileControlsRoot;
+        private GameObject mobileControlsObject;
+        private GameObject fullscreenButton;
+        private AdaptiveUIController adaptiveUI;
 
         private GameObject encyclopediaPanel;
         private GameObject biomePanel;
@@ -67,6 +78,7 @@ namespace Monstrology
         private Text pauseStatsText;
         private Text dailyRewardText;
         private bool isPaused;
+        private bool rewardedEnergyRequestPending;
         private float timeScaleBeforePause = 1f;
 
         public bool ResultCardVisible
@@ -75,9 +87,52 @@ namespace Monstrology
         }
         public bool HasPauseMenu { get { return pausePanel != null && settingsPanel != null; } }
         public bool IsPaused { get { return isPaused; } }
+        public int RewardedEnergyAmount { get { return rewardedEnergyAmount; } }
         public bool NestPanelVisible
         {
             get { return nestPanel != null && nestPanel.activeSelf; }
+        }
+        public bool MobileControlsVisible
+        {
+            get
+            {
+                return mobileControlsObject != null &&
+                       mobileControlsObject.activeSelf;
+            }
+        }
+        public ControlMode ControlMode
+        {
+            get
+            {
+                return adaptiveUI != null
+                    ? adaptiveUI.Mode
+                    : AdaptiveUIController.CurrentMode;
+            }
+        }
+        public int ActiveMainPanelCount
+        {
+            get
+            {
+                int count = 0;
+                GameObject[] panels =
+                {
+                    encyclopediaPanel,
+                    biomePanel,
+                    questPanel,
+                    petsPanel,
+                    accessoryPanel,
+                    breedingPanel
+                };
+                foreach (GameObject panel in panels)
+                {
+                    if (panel != null && panel.activeSelf)
+                    {
+                        count++;
+                    }
+                }
+
+                return count;
+            }
         }
 
         public void Initialize(
@@ -175,6 +230,14 @@ namespace Monstrology
 
             EnsureEventSystem();
             BuildCanvas();
+            if (YandexGamesBridge.Instance != null)
+            {
+                YandexGamesBridge.Instance.RewardedRequestFinished -=
+                    HandleRewardedRequestFinished;
+                YandexGamesBridge.Instance.RewardedRequestFinished +=
+                    HandleRewardedRequestFinished;
+            }
+
             exploration.ExplorationCompleted += ShowExplorationResult;
             game.StateChanged += RefreshHeader;
             game.NotificationRaised += ShowNotification;
@@ -214,6 +277,12 @@ namespace Monstrology
                 game.StateChanged -= RefreshHeader;
                 game.NotificationRaised -= ShowNotification;
             }
+
+            if (YandexGamesBridge.Instance != null)
+            {
+                YandexGamesBridge.Instance.RewardedRequestFinished -=
+                    HandleRewardedRequestFinished;
+            }
         }
 
         private void BuildCanvas()
@@ -235,20 +304,44 @@ namespace Monstrology
             UIFactory.Stretch(shade.rectTransform);
             shade.raycastTarget = false;
 
-            BuildTopBar(canvasObject.transform);
-            BuildMainContent(canvasObject.transform);
-            BuildBottomBar(canvasObject.transform);
-            BuildWorldControls(canvasObject.transform);
-            BuildModals(canvasObject.transform);
+            GameObject safeRootObject = UIFactory.Object(
+                "SafeAreaRoot",
+                canvasObject.transform);
+            safeAreaRoot = safeRootObject.GetComponent<RectTransform>();
+            UIFactory.Stretch(safeAreaRoot);
+
+            BuildTopBar(safeRootObject.transform);
+            BuildMainContent(safeRootObject.transform);
+            BuildBottomBar(safeRootObject.transform);
+            BuildWorldControls(safeRootObject.transform);
+            BuildModals(safeRootObject.transform);
+
+            adaptiveUI = gameObject.GetComponent<AdaptiveUIController>();
+            if (adaptiveUI == null)
+            {
+                adaptiveUI = gameObject.AddComponent<AdaptiveUIController>();
+            }
+
+            adaptiveUI.Initialize(
+                safeAreaRoot,
+                topBarRoot,
+                bottomBarRoot,
+                mobileControlsRoot,
+                mobileControlsObject,
+                fullscreenButton,
+                titleText,
+                interaction);
         }
 
         private void BuildTopBar(Transform parent)
         {
             Image bar = UIFactory.Image("TopBar", parent, new Color(0.055f, 0.075f, 0.11f, 0.94f));
+            topBarRoot = bar.rectTransform;
             UIFactory.SetRect(bar.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f),
                 new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 72f));
 
             Text title = UIFactory.Text("Title", bar.transform, "МОНСТРОЛОГИЯ", 25, FontStyle.Bold, TextAnchor.MiddleLeft);
+            titleText = title;
             UIFactory.SetRect(title.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 1f),
                 new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(240f, 0f));
             title.color = new Color(1f, 0.84f, 0.37f);
@@ -263,10 +356,14 @@ namespace Monstrology
             energyText.lineSpacing = 0.85f;
             energyText.transform.parent.GetComponent<RectTransform>().sizeDelta = new Vector2(126f, 52f);
 
-            Button energyButton = UIFactory.Button("RewardEnergy", bar.transform, "+ Энергия", new Color(0.24f, 0.48f, 0.78f));
-            UIFactory.SetRect(energyButton.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
+            rewardEnergyButton = UIFactory.Button(
+                "RewardEnergy",
+                bar.transform,
+                "+" + rewardedEnergyAmount + " энергии",
+                new Color(0.24f, 0.48f, 0.78f));
+            UIFactory.SetRect(rewardEnergyButton.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
                 new Vector2(1f, 0.5f), new Vector2(-14f, 0f), new Vector2(86f, 42f));
-            energyButton.onClick.AddListener(ShowRewardedEnergy);
+            rewardEnergyButton.onClick.AddListener(ShowRewardedEnergy);
 
             Button pauseButton = UIFactory.Button(
                 "Pause",
@@ -281,6 +378,21 @@ namespace Monstrology
                 new Vector2(270f, 0f),
                 new Vector2(74f, 34f));
             pauseButton.onClick.AddListener(TogglePause);
+
+            Button fullscreen = UIFactory.Button(
+                "Fullscreen",
+                bar.transform,
+                "FULL",
+                new Color(0.22f, 0.38f, 0.58f));
+            fullscreenButton = fullscreen.gameObject;
+            UIFactory.SetRect(
+                fullscreen.GetComponent<RectTransform>(),
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(352f, 0f),
+                new Vector2(62f, 34f));
+            fullscreen.onClick.AddListener(RequestFullscreen);
         }
 
         private Text CreateResourcePill(Transform parent, string name, Vector2 position, Color accent)
@@ -342,6 +454,7 @@ namespace Monstrology
         private void BuildBottomBar(Transform parent)
         {
             Image bar = UIFactory.Image("BottomBar", parent, new Color(0.055f, 0.075f, 0.11f, 0.96f));
+            bottomBarRoot = bar.rectTransform;
             UIFactory.SetRect(bar.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 0f),
                 new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 58f));
 
@@ -370,7 +483,14 @@ namespace Monstrology
 
         private void BuildWorldControls(Transform parent)
         {
-            Image joystickBase = UIFactory.Image("MovementJoystick", parent, new Color(0.08f, 0.12f, 0.18f, 0.72f));
+            mobileControlsObject = UIFactory.Object(
+                "MobileControls",
+                parent);
+            mobileControlsRoot =
+                mobileControlsObject.GetComponent<RectTransform>();
+            UIFactory.Stretch(mobileControlsRoot);
+
+            Image joystickBase = UIFactory.Image("MovementJoystick", mobileControlsObject.transform, new Color(0.08f, 0.12f, 0.18f, 0.72f));
             joystickBase.sprite = SpriteDatabase.Active.GetJoystickBase();
             UIFactory.SetRect(joystickBase.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f),
                 new Vector2(0f, 0f), new Vector2(24f, 74f), new Vector2(118f, 118f));
@@ -391,11 +511,11 @@ namespace Monstrology
 
             Button interactButton = UIFactory.Button(
                 "Interact",
-                parent,
+                mobileControlsObject.transform,
                 "ВЗАИМОДЕЙСТВОВАТЬ",
                 new Color(0.28f, 0.68f, 0.52f, 0.94f));
             UIFactory.SetRect(interactButton.GetComponent<RectTransform>(), new Vector2(1f, 0f), new Vector2(1f, 0f),
-                new Vector2(1f, 0f), new Vector2(-22f, 82f), new Vector2(178f, 52f));
+                new Vector2(1f, 0f), new Vector2(-22f, 104f), new Vector2(196f, 60f));
 
             if (interaction != null)
             {
@@ -467,7 +587,7 @@ namespace Monstrology
             UIFactory.ApplyRounded(card);
             UIFactory.AddSoftShadow(card.gameObject);
             UIFactory.SetRect(card.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560f, 480f));
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560f, 420f));
 
             Text heading = UIFactory.Text(
                 "Heading", card.transform, "ПАУЗА", 30, FontStyle.Bold, TextAnchor.MiddleCenter);
@@ -487,8 +607,6 @@ namespace Monstrology
                 new Color(0.26f, 0.48f, 0.72f));
             AddPauseButton(card.transform, "Achievements", "ДОСТИЖЕНИЯ", -117f, OpenAchievements,
                 new Color(0.52f, 0.38f, 0.7f));
-            AddPauseButton(card.transform, "Exit", "ВЫХОД", -173f, ExitGame,
-                new Color(0.66f, 0.3f, 0.34f));
             pausePanel.SetActive(false);
         }
 
@@ -710,7 +828,7 @@ namespace Monstrology
             Button accept = UIFactory.Button(
                 "Accept",
                 card.transform,
-                "ДА, ДОБАВИТЬ",
+                "СОХРАНИТЬ ИМЯ",
                 new Color(0.28f, 0.65f, 0.43f));
             UIFactory.SetRect(accept.GetComponent<RectTransform>(),
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(1f, 0f),
@@ -719,7 +837,7 @@ namespace Monstrology
             Button decline = UIFactory.Button(
                 "Decline",
                 card.transform,
-                "НЕТ, ТОЛЬКО В ЭНЦИКЛОПЕДИЮ",
+                "ОСТАВИТЬ ИМЯ ВИДА",
                 new Color(0.43f, 0.34f, 0.4f));
             UIFactory.SetRect(decline.GetComponent<RectTransform>(),
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f),
@@ -765,6 +883,11 @@ namespace Monstrology
             {
                 world.StartQuickSearch();
             }
+        }
+
+        public void RequestFullscreen()
+        {
+            WebGLPlatformBridge.RequestFullscreen();
         }
 
         public void OpenBiomes()
@@ -958,9 +1081,9 @@ namespace Monstrology
                 SetWorldInputEnabled(false);
                 adoptionDialog.Show(result.creature, accepted =>
                 {
-                    ShowNotification(accepted
-                        ? result.creature.creatureName + " теперь в коллекции питомцев."
-                        : result.creature.creatureName + " остался только в энциклопедии.");
+                    ShowNotification(
+                        result.creature.creatureName +
+                        " теперь в коллекции питомцев.");
                     SetWorldInputEnabled(true);
                 });
             }
@@ -981,6 +1104,8 @@ namespace Monstrology
             else
             {
                 ShowDailyRewardIfAvailable();
+                SetWorldInputEnabled(
+                    dailyRewardPanel == null || !dailyRewardPanel.activeSelf);
             }
         }
 
@@ -1009,25 +1134,55 @@ namespace Monstrology
 
         public void ShowRewardedEnergy()
         {
-            if (YandexGamesBridge.Instance == null)
+            YandexGamesBridge bridge = YandexGamesBridge.Instance;
+            if (bridge == null ||
+                rewardedEnergyRequestPending ||
+                bridge.IsRewardedRequestPending ||
+                bridge.IsAdvertisementOpen)
             {
                 return;
             }
 
-            YandexGamesBridge.Instance.ShowRewardedAd(success =>
+            rewardedEnergyRequestPending = true;
+            if (rewardEnergyButton != null)
             {
-                if (success)
-                {
-                    game.AddEnergy(5);
-                    ShowNotification("Награда за рекламу: +5 энергии");
-                }
+                rewardEnergyButton.interactable = false;
+            }
+
+            bridge.ShowRewardedAd(YandexGamesBridge.EnergyRewardId, () =>
+            {
+                game.AddEnergy(rewardedEnergyAmount);
+                bridge.SaveProgress();
+                RefreshHeader();
+                ShowNotification(
+                    "Награда за рекламу: +" +
+                    rewardedEnergyAmount +
+                    " энергии");
             });
+        }
+
+        private void HandleRewardedRequestFinished(bool rewarded)
+        {
+            rewardedEnergyRequestPending = false;
+            if (rewardEnergyButton != null)
+            {
+                rewardEnergyButton.interactable = true;
+            }
+
+            if (!rewarded)
+            {
+                ShowNotification("Награда за рекламу не получена.");
+            }
         }
 
         private void OpenPanel(GameObject panel)
         {
             HideStandardPanels();
             panel.SetActive(true);
+            if (bottomBarRoot != null)
+            {
+                bottomBarRoot.SetAsLastSibling();
+            }
             SetWorldInputEnabled(false);
         }
 
@@ -1072,6 +1227,11 @@ namespace Monstrology
             if (interaction != null)
             {
                 interaction.EnableInteraction(value);
+            }
+
+            if (YandexGamesBridge.Instance != null)
+            {
+                YandexGamesBridge.Instance.SetGameplayAvailable(value);
             }
         }
 
@@ -1141,6 +1301,7 @@ namespace Monstrology
             Time.timeScale = 0f;
             settingsPanel.SetActive(false);
             pausePanel.SetActive(true);
+            pausePanel.transform.SetAsLastSibling();
             RefreshPauseStatistics();
             SetWorldInputEnabled(false);
         }
@@ -1159,6 +1320,7 @@ namespace Monstrology
         {
             pausePanel.SetActive(false);
             settingsPanel.SetActive(true);
+            settingsPanel.transform.SetAsLastSibling();
             SetWorldInputEnabled(false);
         }
 
@@ -1166,6 +1328,7 @@ namespace Monstrology
         {
             settingsPanel.SetActive(false);
             pausePanel.SetActive(true);
+            pausePanel.transform.SetAsLastSibling();
             RefreshPauseStatistics();
             SetWorldInputEnabled(false);
         }
@@ -1204,10 +1367,11 @@ namespace Monstrology
             }
 
             introPanel.SetActive(false);
-            SetWorldInputEnabled(true);
             ShowNotification(
                 "Первая цель: исследуйте Лес и найдите первое существо. Получено +25 энергии и +25 монет.");
             ShowDailyRewardIfAvailable();
+            SetWorldInputEnabled(
+                dailyRewardPanel == null || !dailyRewardPanel.activeSelf);
         }
 
         private void ShowDailyRewardIfAvailable()
@@ -1223,6 +1387,7 @@ namespace Monstrology
                                    dailyRewards.GetRewardDescription(day) +
                                    "\nПосле седьмого дня цикл начнётся снова.";
             dailyRewardPanel.SetActive(true);
+            dailyRewardPanel.transform.SetAsLastSibling();
             SetWorldInputEnabled(false);
         }
 
@@ -1249,22 +1414,6 @@ namespace Monstrology
             SetWorldInputEnabled(true);
         }
 
-        private void ExitGame()
-        {
-            if (game != null)
-            {
-                game.SaveNow();
-            }
-
-#if UNITY_WEBGL && !UNITY_EDITOR
-            ShowNotification("Прогресс сохранён. Можно закрыть вкладку.");
-#elif UNITY_EDITOR
-            Debug.Log("Exit requested. Progress saved; stop Play Mode from the Unity Editor.");
-#else
-            Application.Quit();
-#endif
-        }
-
         private static void EnsureEventSystem()
         {
             if (FindObjectOfType<EventSystem>() != null)
@@ -1279,8 +1428,6 @@ namespace Monstrology
 
     internal static class UIFactory
     {
-        private static Font cachedFont;
-
         public static GameObject Object(string name, Transform parent)
         {
             GameObject instance = new GameObject(name, typeof(RectTransform));
@@ -1557,15 +1704,7 @@ namespace Monstrology
 
         private static Font Font
         {
-            get
-            {
-                if (cachedFont == null)
-                {
-                    cachedFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-                }
-
-                return cachedFont;
-            }
+            get { return MonstrologyFontProvider.LegacyFont; }
         }
 
         private static Sprite RoundedSprite

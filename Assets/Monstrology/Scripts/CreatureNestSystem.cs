@@ -14,6 +14,7 @@ namespace Monstrology
         public int level = 1;
         public int claims;
         public string lastClaimUtc;
+        public string spawnCooldownUntilUtc;
 
         public CreatureNestProgress Clone()
         {
@@ -23,7 +24,8 @@ namespace Monstrology
                 speciesId = speciesId,
                 level = level,
                 claims = claims,
-                lastClaimUtc = lastClaimUtc
+                lastClaimUtc = lastClaimUtc,
+                spawnCooldownUntilUtc = spawnCooldownUntilUtc
             };
         }
     }
@@ -66,7 +68,10 @@ namespace Monstrology
                 nests.AddRange(game.GetSavedCreatureNests());
             }
 
-            Normalize();
+            if (Normalize())
+            {
+                Save();
+            }
         }
 
         public IReadOnlyList<CreatureNestProgress> GetAllNests()
@@ -107,6 +112,49 @@ namespace Monstrology
                 : game.Content.creatureNests.Count(data => data != null && data.biome == biome);
         }
 
+        public bool IsBiomeSpawnCooldownActive(BiomeType biome)
+        {
+            DateTime now = DateTime.UtcNow;
+            return nests.Any(entry =>
+            {
+                CreatureNestData data = GetData(entry);
+                DateTime cooldownUntil;
+                return data != null &&
+                       data.biome == biome &&
+                       TryParseUtc(
+                           entry.spawnCooldownUntilUtc,
+                           out cooldownUntil) &&
+                       cooldownUntil > now;
+            });
+        }
+
+        public TimeSpan GetBiomeSpawnCooldown(BiomeType biome)
+        {
+            DateTime now = DateTime.UtcNow;
+            DateTime latest = now;
+            foreach (CreatureNestProgress entry in nests)
+            {
+                CreatureNestData data = GetData(entry);
+                DateTime cooldownUntil;
+                if (data != null &&
+                    data.biome == biome &&
+                    TryParseUtc(entry.spawnCooldownUntilUtc, out cooldownUntil) &&
+                    cooldownUntil > latest)
+                {
+                    latest = cooldownUntil;
+                }
+            }
+
+            return latest > now ? latest - now : TimeSpan.Zero;
+        }
+
+        public bool CanSpawnNest(CreatureNestData data)
+        {
+            return data != null &&
+                   GetNest(data.id) == null &&
+                   !IsBiomeSpawnCooldownActive(data.biome);
+        }
+
         public bool Discover(string speciesId, out CreatureNestProgress progress)
         {
             progress = null;
@@ -136,7 +184,8 @@ namespace Monstrology
                 claims = 0,
                 lastClaimUtc = DateTime.UtcNow
                     .AddHours(-Mathf.Max(0.05f, data.rewardCooldownHours))
-                    .ToString("o", CultureInfo.InvariantCulture)
+                    .ToString("o", CultureInfo.InvariantCulture),
+                spawnCooldownUntilUtc = GetCooldownUntilUtc(data)
             };
             nests.Add(progress);
             Save();
@@ -254,10 +303,14 @@ namespace Monstrology
                 1,
                 Mathf.Max(1, data.maxLevel));
             progress.lastClaimUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+            progress.spawnCooldownUntilUtc = GetCooldownUntilUtc(data);
             Save();
 
             message = data.displayName + ": +" + copies + " коп." +
-                      (resource != null ? ", +" + resources + " " + resource.itemName : "") +
+                      (resource != null
+                          ? ", +" + resources + " " +
+                            resource.GetVisibleName(game)
+                          : "") +
                       (rareAccessory != null ? ", " + rareAccessory.displayName : "") +
                       (specialCreature != null
                           ? ", особая встреча: " + specialCreature.creatureName
@@ -317,18 +370,67 @@ namespace Monstrology
                 : speciesId;
         }
 
-        private void Normalize()
+        private bool Normalize()
         {
-            nests.RemoveAll(entry => entry == null || string.IsNullOrEmpty(entry.nestId));
+            bool changed = false;
+            int removed = nests.RemoveAll(entry =>
+                entry == null || string.IsNullOrEmpty(entry.nestId));
+            changed |= removed > 0;
             foreach (CreatureNestProgress entry in nests)
             {
-                entry.level = Mathf.Max(1, entry.level);
-                entry.claims = Mathf.Max(0, entry.claims);
+                int level = Mathf.Max(1, entry.level);
+                int claims = Mathf.Max(0, entry.claims);
+                changed |= level != entry.level || claims != entry.claims;
+                entry.level = level;
+                entry.claims = claims;
                 if (string.IsNullOrEmpty(entry.lastClaimUtc))
                 {
                     entry.lastClaimUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+                    changed = true;
+                }
+
+                if (string.IsNullOrEmpty(entry.spawnCooldownUntilUtc) &&
+                    entry.claims > 0)
+                {
+                    CreatureNestData data = GetData(entry);
+                    DateTime lastClaim;
+                    if (data != null &&
+                        TryParseUtc(entry.lastClaimUtc, out lastClaim))
+                    {
+                        DateTime cooldownUntil = lastClaim.AddHours(
+                            Mathf.Max(0.05f, data.rewardCooldownHours));
+                        if (cooldownUntil > DateTime.UtcNow)
+                        {
+                            entry.spawnCooldownUntilUtc =
+                                cooldownUntil.ToString(
+                                    "o",
+                                    CultureInfo.InvariantCulture);
+                            changed = true;
+                        }
+                    }
                 }
             }
+
+            return changed;
+        }
+
+        private static bool TryParseUtc(string value, out DateTime utc)
+        {
+            DateTime parsed;
+            bool success = DateTime.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out parsed);
+            utc = success ? parsed.ToUniversalTime() : DateTime.MinValue;
+            return success;
+        }
+
+        private static string GetCooldownUntilUtc(CreatureNestData data)
+        {
+            return DateTime.UtcNow
+                .AddHours(Mathf.Max(0.05f, data.rewardCooldownHours))
+                .ToString("o", CultureInfo.InvariantCulture);
         }
 
         private void Save()

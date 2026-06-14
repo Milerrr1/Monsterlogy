@@ -16,10 +16,29 @@ namespace Monstrology
         private GameObject petObject;
         private CreatureVisualRig visualRig;
         private TextMesh nameText;
-        private TextMesh rarityText;
         private GameObject fullSetEffect;
+        private WorldYSorter ySorter;
         private Vector3 velocity;
         private string displayedPetId;
+
+        public bool HasWorldRarityLabel
+        {
+            get
+            {
+                return petObject != null &&
+                       petObject.transform.Find("Rarity") != null;
+            }
+        }
+
+        public string DisplayedName
+        {
+            get { return nameText != null ? nameText.text : string.Empty; }
+        }
+
+        public CreatureVisualRig VisualRig
+        {
+            get { return visualRig; }
+        }
 
         public void Initialize(
             PlayerController2D playerController,
@@ -121,15 +140,7 @@ namespace Monstrology
             nameText.characterSize = 0.11f;
             nameText.fontSize = 36;
             nameText.color = Color.white;
-
-            GameObject rarityLabel = new GameObject("Rarity");
-            rarityLabel.transform.SetParent(petObject.transform, false);
-            rarityLabel.transform.localPosition = new Vector3(0f, 0.57f, 0f);
-            rarityText = rarityLabel.AddComponent<TextMesh>();
-            rarityText.anchor = TextAnchor.MiddleCenter;
-            rarityText.alignment = TextAlignment.Center;
-            rarityText.characterSize = 0.075f;
-            rarityText.fontSize = 30;
+            MonstrologyFontProvider.Apply(nameText);
 
             fullSetEffect = new GameObject("SignatureSetEffect");
             fullSetEffect.transform.SetParent(petObject.transform, false);
@@ -139,6 +150,12 @@ namespace Monstrology
             effectRenderer.color = new Color(0.55f, 0.86f, 1f, 0.55f);
             effectRenderer.sortingOrder = 18;
             fullSetEffect.SetActive(false);
+            WorldShadowUtility.EnsureShadow(
+                petObject.transform,
+                new Vector2(0.58f, 0.12f),
+                0.2f);
+            ySorter = petObject.AddComponent<WorldYSorter>();
+            ySorter.Configure(true);
             petObject.SetActive(false);
         }
 
@@ -163,13 +180,17 @@ namespace Monstrology
                 species,
                 PetLocalization.RarityColor(favorite.rarity));
             nameText.text = favorite.GetDisplayName(species);
-            rarityText.text = PetLocalization.Rarity(favorite.rarity);
-            rarityText.color = PetLocalization.RarityColor(favorite.rarity);
             RebuildAccessoryVisuals(favorite);
             if (fullSetEffect != null)
             {
                 fullSetEffect.SetActive(
                     signatureSets != null && signatureSets.HasFullSetVisual(favorite));
+            }
+
+            if (ySorter != null)
+            {
+                ySorter.RefreshRenderers();
+                ySorter.ApplyNow();
             }
 
             if (changedPet && player != null)
@@ -185,6 +206,10 @@ namespace Monstrology
                 ? accessories.GetEquippedAccessories(favorite.uniqueId)
                 : new List<AccessoryData>();
             visualRig.ApplyAccessories(equipped);
+            if (ySorter != null)
+            {
+                ySorter.RefreshRenderers();
+            }
         }
     }
 }

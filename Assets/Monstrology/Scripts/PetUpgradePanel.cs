@@ -102,7 +102,7 @@ namespace Monstrology
             int owned = resource != null ? game.GetItemCount(resource.id) : 0;
             details.text = "Текущий уровень: " + pet.level + " / " + PetUpgradeSystem.MaxLevel +
                            (resource != null
-                               ? "\nНужный ресурс: " + resource.itemName +
+                               ? "\nНужный ресурс: " + resource.GetVisibleName(game) +
                                  "\nВ наличии: " + owned + " / Нужно: " + required
                                : "\nПрокачка для этого питомца пока недоступна.");
 

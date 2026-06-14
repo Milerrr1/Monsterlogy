@@ -12,6 +12,13 @@ namespace Monstrology.Editor
         private const string ResultShownAtKey = "Monstrology.SmokeTest.ResultShownAt";
         private static int playStartFrame;
         private static int restartWaitUpdates;
+        private static int rewardedEnergyBefore;
+        private static float rewardedRequestedAt;
+        private static float rewardedOpenedAt;
+        private static float rewardedTimeScaleBefore;
+        private static bool rewardedAudioPauseBefore;
+        private static bool rewardedMovementBefore;
+        private static bool rewardedAdvertisementOpened;
 
         [InitializeOnLoadMethod]
         private static void ResumeAfterDomainReload()
@@ -28,6 +35,13 @@ namespace Monstrology.Editor
         {
             playStartFrame = 0;
             restartWaitUpdates = 0;
+            rewardedEnergyBefore = 0;
+            rewardedRequestedAt = 0f;
+            rewardedOpenedAt = 0f;
+            rewardedTimeScaleBefore = 1f;
+            rewardedAudioPauseBefore = false;
+            rewardedMovementBefore = true;
+            rewardedAdvertisementOpened = false;
             EditorApplication.update -= Tick;
             EditorApplication.update += Tick;
 
@@ -124,6 +138,8 @@ namespace Monstrology.Editor
                     AchievementPanel achievementPanel =
                         Object.FindObjectOfType<AchievementPanel>(true);
                     TrackChainSystem trackChains = Object.FindObjectOfType<TrackChainSystem>();
+                    YandexGamesBridge yandexBridge =
+                        Object.FindObjectOfType<YandexGamesBridge>();
                     MutationSystem legacyMutationSystem = Object.FindObjectOfType<MutationSystem>();
                     if (game == null || ui == null || exploration == null ||
                         canvas == null || player == null ||
@@ -138,7 +154,8 @@ namespace Monstrology.Editor
                         creatureVisualValidator == null ||
                         encyclopediaCheck == null || nestPanel == null ||
                         followPet == null || wardrobePanel == null ||
-                        breedingPanel == null || achievementPanel == null || trackChains == null)
+                        breedingPanel == null || achievementPanel == null ||
+                        trackChains == null || yandexBridge == null)
                     {
                         throw new System.InvalidOperationException(
                             "Missing runtime objects: " +
@@ -176,7 +193,8 @@ namespace Monstrology.Editor
                             ", wardrobePanel=" + (wardrobePanel != null) +
                             ", breedingPanel=" + (breedingPanel != null) +
                             ", achievementPanel=" + (achievementPanel != null) +
-                            ", trackChains=" + (trackChains != null));
+                            ", trackChains=" + (trackChains != null) +
+                            ", yandexBridge=" + (yandexBridge != null));
                     }
 
                     if (legacyMutationSystem != null || upgradePanel != null ||
@@ -226,6 +244,335 @@ namespace Monstrology.Editor
                     {
                         throw new System.InvalidOperationException(
                             "SpriteDatabase does not resolve all replaceable artwork.");
+                    }
+
+                    string forestContentReport =
+                        ForestContentInstaller.GetValidationReport();
+                    if (string.IsNullOrEmpty(forestContentReport) ||
+                        !forestContentReport.Contains(
+                            "FOREST_CONTENT_VALIDATION_PASS"))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest content validation failed:\n" +
+                            forestContentReport);
+                    }
+
+                    string desertContentReport =
+                        ForestContentInstaller.GetDesertValidationReport();
+                    if (string.IsNullOrEmpty(desertContentReport) ||
+                        !desertContentReport.Contains(
+                            "DESERT_CONTENT_VALIDATION_PASS"))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Desert content validation failed:\n" +
+                            desertContentReport);
+                    }
+
+                    CreatureData breadcat = game.GetCreature("bread_cat");
+                    CreatureData vacuumRhino = game.GetCreature("vacuum_rhino");
+                    CreatureData watermelon = game.GetCreature("watermelon_saur");
+                    BiomeData forest = game.GetBiome(BiomeType.Forest);
+                    BiomeData desert = game.GetBiome(BiomeType.Desert);
+                    float desertRarityRatio =
+                        watermelon != null && vacuumRhino != null
+                            ? watermelon.appearanceChance * 0.2f /
+                              (vacuumRhino.appearanceChance * 0.48f)
+                            : 0f;
+                    if (breadcat == null ||
+                        breadcat.creatureName != "Хлебокот" ||
+                        breadcat.biome != BiomeType.Forest ||
+                        breadcat.rarity != CreatureRarity.Common ||
+                        breadcat.element != CreatureElement.Nature ||
+                        vacuumRhino == null ||
+                        vacuumRhino.creatureName != "Пылесосорог" ||
+                        vacuumRhino.description !=
+                            "Пустынный чистюля, который засасывает песок, пыль и " +
+                            "потерянные путешественниками предметы металлическим хоботом." ||
+                        vacuumRhino.biome != BiomeType.Desert ||
+                        vacuumRhino.rarity != CreatureRarity.Rare ||
+                        vacuumRhino.element != CreatureElement.Sand ||
+                        vacuumRhino.appearanceChance <= 0f ||
+                        forest == null ||
+                        !forest.availableCreatures.Any(creature =>
+                            creature != null && creature.id == "bread_cat") ||
+                        forest.availableCreatures.Any(creature =>
+                            creature != null && creature.id == "vacuum_rhino") ||
+                        forest.mapData.possibleCreatures.Any(creature =>
+                            creature != null && creature.id == "vacuum_rhino") ||
+                        desert == null ||
+                        !desert.availableCreatures.Any(creature =>
+                            creature != null && creature.id == "vacuum_rhino") ||
+                        !desert.mapData.possibleCreatures.Any(creature =>
+                            creature != null && creature.id == "vacuum_rhino") ||
+                        desertRarityRatio < 1.5f ||
+                        AssetDatabase.GetAssetPath(
+                            spriteDatabase.GetCreatureWorld(breadcat)) !=
+                        "Assets/Monstrology/Art/Creatures/Breadcat.png" ||
+                        AssetDatabase.GetAssetPath(
+                            spriteDatabase.GetCreatureWorld(vacuumRhino)) !=
+                        "Assets/Monstrology/Art/Creatures/VacuumRhino.png")
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest/desert creature data or final artwork is invalid.");
+                    }
+
+                    ItemData breadCrumbs = game.GetItem("bread_crumbs");
+                    ItemData vacuumFilter = game.GetItem("forest_battery");
+                    if (breadCrumbs == null ||
+                        breadCrumbs.kind != ItemKind.UpgradeResource ||
+                        breadCrumbs.requiredSpeciesId != "bread_cat" ||
+                        breadCrumbs.preferredBiome != BiomeType.Forest ||
+                        vacuumFilter == null ||
+                        vacuumFilter.kind != ItemKind.UpgradeResource ||
+                        vacuumFilter.itemName != "Песчаный фильтр" ||
+                        vacuumFilter.requiredSpeciesId != "vacuum_rhino" ||
+                        vacuumFilter.preferredBiome != BiomeType.Desert)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Pet upgrade resources are invalid.");
+                    }
+
+                    ItemData magmaFireStone = game.GetItem("fire_stone");
+                    if (magmaFireStone == null ||
+                        magmaFireStone.requiredSpeciesId != "magma_orb" ||
+                        magmaFireStone.preferredBiome != BiomeType.Volcano ||
+                        magmaFireStone.GetVisibleName(false) !=
+                            ItemData.HiddenName ||
+                        magmaFireStone.GetVisibleDescription(false) !=
+                            ItemData.HiddenDescription ||
+                        magmaFireStone.GetVisibleName(true) !=
+                            magmaFireStone.itemName ||
+                        magmaFireStone.GetVisibleDescription(true) !=
+                            magmaFireStone.description ||
+                        ExplorationSystem.CanItemDropInBiome(
+                            magmaFireStone,
+                            BiomeType.Forest) ||
+                        !ExplorationSystem.CanItemDropInBiome(
+                            magmaFireStone,
+                            BiomeType.Volcano))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Linked resource visibility or biome assignment is invalid.");
+                    }
+
+                    if (!game.IsCreatureFound(vacuumRhino.id))
+                    {
+                        game.AddCreature(vacuumRhino);
+                    }
+
+                    CreatureInstance oldVacuumPet =
+                        petCollection.GetPetBySpecies(vacuumRhino.id);
+                    if (oldVacuumPet != null &&
+                        !petCollection.RemovePet(oldVacuumPet.uniqueId))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Vacuum Rhino setup could not remove the old pet entry.");
+                    }
+
+                    petCollection.Initialize(game);
+                    CreatureInstance vacuumPet =
+                        petCollection.GetPetBySpecies(vacuumRhino.id);
+                    if (vacuumPet == null ||
+                        petCollection.GetAllPets().Count(pet =>
+                            pet != null &&
+                            pet.speciesId == vacuumRhino.id) != 1)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Discovered Vacuum Rhino was not migrated into Pets.");
+                    }
+
+                    const string vacuumPetName = "Пылесос";
+                    if (!petCollection.RenamePet(
+                            vacuumPet.uniqueId,
+                            vacuumPetName) ||
+                        !petCollection.SetFavorite(vacuumPet.uniqueId))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Vacuum Rhino could not be renamed or selected as favorite.");
+                    }
+
+                    string vacuumPetId = vacuumPet.uniqueId;
+                    int vacuumCopiesBeforeRepeat =
+                        game.GetCreatureCount(vacuumRhino.id);
+                    game.AddCreature(vacuumRhino);
+                    CreatureInstance repeatedVacuumPet =
+                        petCollection.GetPetBySpecies(vacuumRhino.id);
+                    if (game.GetCreatureCount(vacuumRhino.id) !=
+                            vacuumCopiesBeforeRepeat + 1 ||
+                        repeatedVacuumPet == null ||
+                        repeatedVacuumPet.uniqueId != vacuumPetId ||
+                        petCollection.GetAllPets().Count(pet =>
+                            pet != null &&
+                            pet.speciesId == vacuumRhino.id) != 1)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Repeated Vacuum Rhino encounter created a duplicate pet.");
+                    }
+
+                    petCollection.Initialize(game);
+                    vacuumPet = petCollection.GetPetBySpecies(vacuumRhino.id);
+                    if (vacuumPet == null ||
+                        vacuumPet.customName != vacuumPetName ||
+                        !vacuumPet.isFavorite)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Vacuum Rhino name or favorite state did not survive reload.");
+                    }
+
+                    CreatureNestData vacuumNest =
+                        game.Content.creatureNests.Find(nest =>
+                            nest != null &&
+                            nest.speciesId == "vacuum_rhino");
+                    if (vacuumNest == null ||
+                        vacuumNest.biome != BiomeType.Desert)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Vacuum Rhino nest is not assigned to Desert.");
+                    }
+
+                    if (game.GetEvolution("vacuum_rhino") == null ||
+                        game.GetEvolution("vacuum_rhino").requiredCopies != 100 ||
+                        game.GetEvolution("vacuum_rhino").resultSpeciesId !=
+                            "vacuum_rhino_ii" ||
+                        game.GetEvolution("vacuum_rhino_ii") == null ||
+                        game.GetEvolution("vacuum_rhino_ii").requiredCopies != 250 ||
+                        game.GetEvolution("vacuum_rhino_ii").resultSpeciesId !=
+                            "vacuum_rhino_iii" ||
+                        game.GetEvolution("vacuum_rhino_iii") == null ||
+                        game.GetEvolution("vacuum_rhino_iii").requiredCopies != 500 ||
+                        game.GetEvolution("vacuum_rhino_iii").resultSpeciesId !=
+                            "turbo_vacuum_rhino")
+                    {
+                        throw new System.InvalidOperationException(
+                            "Vacuum Rhino evolution chain is invalid.");
+                    }
+
+                    string[] vacuumForms =
+                    {
+                        "vacuum_rhino",
+                        "vacuum_rhino_ii",
+                        "vacuum_rhino_iii",
+                        "turbo_vacuum_rhino"
+                    };
+                    if (vacuumForms.Any(id =>
+                    {
+                        CreatureData form = game.GetCreature(id);
+                        return form == null ||
+                               form.biome != BiomeType.Desert ||
+                               form.element != CreatureElement.Sand ||
+                               (id != "vacuum_rhino" &&
+                                form.appearanceChance > 0f);
+                    }))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Vacuum Rhino forms have invalid desert or wild-spawn data.");
+                    }
+
+                    AccessoryData forestHat = game.GetAccessory("forest_hat");
+                    AccessoryData forestScarf = game.GetAccessory("forest_scarf");
+                    AccessoryData forestBoots = game.GetAccessory("forest_boots");
+                    SignatureSetData forestSet =
+                        game.Content.signatureSets.Find(set =>
+                            set != null && set.id == "forest_set");
+                    if (forestHat == null ||
+                        forestHat.slot != AccessorySlot.Head ||
+                        forestScarf == null ||
+                        forestScarf.slot != AccessorySlot.Body ||
+                        forestBoots == null ||
+                        forestBoots.slot != AccessorySlot.Legs ||
+                        forestScarf.dropChance <= forestHat.dropChance ||
+                        forestHat.dropChance <= forestBoots.dropChance ||
+                        !ExplorationSystem.CanAccessoryDropInBiome(
+                            forestHat,
+                            BiomeType.Forest) ||
+                        ExplorationSystem.CanAccessoryDropInBiome(
+                            forestHat,
+                            BiomeType.Desert) ||
+                        forestSet == null ||
+                        !forestSet.accessoryIds.SequenceEqual(new[]
+                        {
+                            "forest_hat",
+                            "forest_scarf",
+                            "forest_boots"
+                        }) ||
+                        !Mathf.Approximately(
+                            forestSet.twoPieceResourceBonus,
+                            0.05f) ||
+                        !Mathf.Approximately(
+                            forestSet.fullSetResourceBonus,
+                            0.1f) ||
+                        !Mathf.Approximately(
+                            forestSet.fullSetRareCreatureBonus,
+                            0.03f))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest wardrobe set data is invalid.");
+                    }
+
+                    GameObject forestRigObject =
+                        new GameObject("ForestContentRigTest");
+                    CreatureVisualRig forestRig =
+                        forestRigObject.AddComponent<CreatureVisualRig>();
+                    forestRig.ApplyCreature(breadcat, Color.white);
+                    forestRig.ApplyAccessories(new[]
+                    {
+                        forestHat,
+                        forestScarf,
+                        forestBoots
+                    });
+                    bool forestRigValid =
+                        forestRig.HasValidStructure() &&
+                        forestRig.HeadAnchor.childCount == 1 &&
+                        forestRig.BodyAnchor.childCount == 1 &&
+                        forestRig.LegAnchor.childCount == 1 &&
+                        forestRig.HeadAnchor.GetChild(0)
+                            .GetComponent<SpriteRenderer>().sprite ==
+                        spriteDatabase.GetAccessory(forestHat) &&
+                        forestRig.BodyAnchor.GetChild(0)
+                            .GetComponent<SpriteRenderer>().sprite ==
+                        spriteDatabase.GetAccessory(forestScarf) &&
+                        forestRig.LegAnchor.GetChild(0)
+                            .GetComponent<SpriteRenderer>().sprite ==
+                        spriteDatabase.GetAccessory(forestBoots);
+                    Object.Destroy(forestRigObject);
+                    if (!forestRigValid)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest wardrobe visuals are not attached to standard anchors.");
+                    }
+
+                    if (!accessoryInventory.AddAccessory(forestBoots) ||
+                        !accessoryInventory.EquipAccessory(
+                            vacuumPet.uniqueId,
+                            forestBoots.id))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest boots could not be owned and equipped.");
+                    }
+
+                    petCollection.Initialize(game);
+                    accessoryInventory.Initialize(game, petCollection);
+                    vacuumPet = petCollection.GetPetBySpecies(vacuumRhino.id);
+                    followPet.Initialize(
+                        player,
+                        petCollection,
+                        accessoryInventory);
+                    bool bootsPersisted =
+                        vacuumPet != null &&
+                        accessoryInventory.GetEquippedAccessories(
+                                vacuumPet.uniqueId)
+                            .Any(accessory =>
+                                accessory != null &&
+                                accessory.id == forestBoots.id);
+                    if (!bootsPersisted ||
+                        followPet.HasWorldRarityLabel ||
+                        followPet.DisplayedName != vacuumPetName ||
+                        followPet.VisualRig == null ||
+                        !followPet.VisualRig.HasVisibleAccessory(
+                            forestBoots.id))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Follower label or persisted forest boots visual is invalid.");
                     }
 
                     System.Collections.Generic.HashSet<string> evolutionResults =
@@ -428,6 +775,16 @@ namespace Monstrology.Editor
                             "Starting resources or progressive hint prices are invalid.");
                     }
 
+                    if (!yandexBridge.IsSDKReady() ||
+                        YG.YG2.infoYG.Basic.autoGRA ||
+                        (player.MovementEnabled &&
+                         (!yandexBridge.IsGameReadySent ||
+                          !yandexBridge.IsGameplayAvailable)))
+                    {
+                        throw new System.InvalidOperationException(
+                            "PluginYG2 bridge readiness or manual Game Ready is invalid.");
+                    }
+
                     RectTransform bottomBar = canvas.GetComponentsInChildren<RectTransform>(true)
                         .FirstOrDefault(rect => rect.name == "BottomBar");
                     if (bottomBar == null || bottomBar.Find("ДОСТИЖЕНИЯ") != null)
@@ -586,12 +943,107 @@ namespace Monstrology.Editor
                             "Forest could not be selected for the nest smoke test.");
                     }
 
+                    for (int itemRoll = 0; itemRoll < 64; itemRoll++)
+                    {
+                        ItemData selectedItem = exploration.SelectItem(false);
+                        if (selectedItem != null &&
+                            selectedItem.preferredBiome != BiomeType.Forest)
+                        {
+                            throw new System.InvalidOperationException(
+                                "Exploration selected an item from another biome.");
+                        }
+                    }
+
                     CreatureNestProgress forestNest;
                     creatureNests.Discover("bread_cat", out forestNest);
                     if (forestNest == null)
                     {
                         throw new System.InvalidOperationException(
                             "A forest nest could not be discovered.");
+                    }
+
+                    string futureCooldown = System.DateTime.UtcNow
+                        .AddMinutes(5)
+                        .ToString(
+                            "o",
+                            System.Globalization.CultureInfo.InvariantCulture);
+                    foreach (CreatureNestProgress entry in
+                             creatureNests.GetAllNests())
+                    {
+                        CreatureNestData entryData =
+                            creatureNests.GetNestData(entry.nestId);
+                        if (entryData != null &&
+                            entryData.biome == BiomeType.Forest)
+                        {
+                            entry.spawnCooldownUntilUtc = futureCooldown;
+                        }
+                    }
+
+                    game.SaveCreatureNests(
+                        creatureNests.GetAllNests()
+                            .Select(entry => entry.Clone())
+                            .ToList());
+                    creatureNests.Initialize(game, accessoryInventory);
+                    forestNest = creatureNests.GetNest(forestNest.nestId);
+                    System.DateTime parsedCooldown;
+                    if (forestNest == null ||
+                        !System.DateTime.TryParse(
+                            forestNest.spawnCooldownUntilUtc,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.RoundtripKind,
+                            out parsedCooldown) ||
+                        parsedCooldown.ToUniversalTime() <=
+                            System.DateTime.UtcNow ||
+                        !creatureNests.IsBiomeSpawnCooldownActive(
+                            BiomeType.Forest))
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest nest UTC spawn cooldown was not restored.");
+                    }
+
+                    CreatureNestData cooldownProbe =
+                        ScriptableObject.CreateInstance<CreatureNestData>();
+                    cooldownProbe.id = "smoke_forest_nest_after_cooldown";
+                    cooldownProbe.speciesId = "bread_cat";
+                    cooldownProbe.biome = BiomeType.Forest;
+                    if (creatureNests.CanSpawnNest(cooldownProbe))
+                    {
+                        Object.Destroy(cooldownProbe);
+                        throw new System.InvalidOperationException(
+                            "A second forest nest could spawn during cooldown.");
+                    }
+
+                    string expiredCooldown = System.DateTime.UtcNow
+                        .AddMinutes(-1)
+                        .ToString(
+                            "o",
+                            System.Globalization.CultureInfo.InvariantCulture);
+                    foreach (CreatureNestProgress entry in
+                             creatureNests.GetAllNests())
+                    {
+                        CreatureNestData entryData =
+                            creatureNests.GetNestData(entry.nestId);
+                        if (entryData != null &&
+                            entryData.biome == BiomeType.Forest)
+                        {
+                            entry.spawnCooldownUntilUtc = expiredCooldown;
+                        }
+                    }
+
+                    game.SaveCreatureNests(
+                        creatureNests.GetAllNests()
+                            .Select(entry => entry.Clone())
+                            .ToList());
+                    creatureNests.Initialize(game, accessoryInventory);
+                    bool canSpawnAfterCooldown =
+                        !creatureNests.IsBiomeSpawnCooldownActive(
+                            BiomeType.Forest) &&
+                        creatureNests.CanSpawnNest(cooldownProbe);
+                    Object.Destroy(cooldownProbe);
+                    if (!canSpawnAfterCooldown)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Forest nest did not become available after cooldown.");
                     }
 
                     world.ReloadCurrentBiome();
@@ -720,7 +1172,239 @@ namespace Monstrology.Editor
                         throw new System.InvalidOperationException("Evolution chain is not deterministic.");
                     }
 
-                    exploration.ResolveWorldDiscovery(ExplorationResultType.Nothing);
+                    if (game.Energy >
+                        EnergyRegenerationSystem.MaxEnergy - 3)
+                    {
+                        game.SpendEnergy(3);
+                    }
+
+                    rewardedEnergyBefore = game.Energy;
+                    rewardedRequestedAt = Time.unscaledTime;
+                    rewardedOpenedAt = Time.realtimeSinceStartup;
+                    rewardedAdvertisementOpened = false;
+                    rewardedTimeScaleBefore = Time.timeScale;
+                    rewardedAudioPauseBefore = AudioListener.pause;
+                    rewardedMovementBefore = player.MovementEnabled;
+                    ui.ShowRewardedEnergy();
+                    if (game.Energy != rewardedEnergyBefore ||
+                        yandexBridge.LastRewardId !=
+                            YandexGamesBridge.EnergyRewardId)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Rewarded energy was granted early or used a wrong reward ID.");
+                    }
+
+                    SessionState.SetString(SessionKey, "reward_wait");
+                }
+                catch (System.Exception exception)
+                {
+                    Debug.LogException(exception);
+                    SessionState.EraseString(SessionKey);
+                    EditorApplication.update -= Tick;
+                    if (Application.isBatchMode)
+                    {
+                        EditorApplication.Exit(1);
+                    }
+                }
+
+                return;
+            }
+
+            if (stage == "reward_wait" && EditorApplication.isPlaying)
+            {
+                try
+                {
+                    GameManager game = Object.FindObjectOfType<GameManager>();
+                    UIManager ui = Object.FindObjectOfType<UIManager>();
+                    ExplorationSystem exploration =
+                        Object.FindObjectOfType<ExplorationSystem>();
+                    YandexGamesBridge bridge =
+                        Object.FindObjectOfType<YandexGamesBridge>();
+                    PlayerController2D player =
+                        Object.FindObjectOfType<PlayerController2D>();
+
+                    if (bridge != null &&
+                        bridge.IsAdvertisementOpen &&
+                        !rewardedAdvertisementOpened)
+                    {
+                        rewardedAdvertisementOpened = true;
+                        rewardedOpenedAt = Time.realtimeSinceStartup;
+                    }
+
+                    if (game != null &&
+                        game.Energy == rewardedEnergyBefore)
+                    {
+                        bool stillOpening =
+                            !rewardedAdvertisementOpened &&
+                            Time.unscaledTime - rewardedRequestedAt < 10f;
+                        bool stillShowing =
+                            rewardedAdvertisementOpened &&
+                            Time.realtimeSinceStartup - rewardedOpenedAt < 5f;
+                        if (stillOpening || stillShowing)
+                        {
+                            return;
+                        }
+                    }
+
+                    bool rewardGranted =
+                        game != null &&
+                        game.Energy == rewardedEnergyBefore + 3;
+                    bool platformStateRestored =
+                        bridge != null &&
+                        player != null &&
+                        !bridge.IsAdvertisementOpen &&
+                        AudioListener.pause == rewardedAudioPauseBefore &&
+                        Mathf.Approximately(
+                            Time.timeScale,
+                            rewardedTimeScaleBefore) &&
+                        player.MovementEnabled == rewardedMovementBefore;
+                    if (rewardGranted &&
+                        (bridge == null ||
+                         bridge.IsRewardedRequestPending ||
+                         !platformStateRestored) &&
+                        Time.realtimeSinceStartup - rewardedOpenedAt < 10f)
+                    {
+                        return;
+                    }
+
+                    if (game == null || ui == null || exploration == null ||
+                        bridge == null || player == null ||
+                        !rewardGranted ||
+                        !platformStateRestored)
+                    {
+                        throw new System.InvalidOperationException(
+                            "PluginYG2 rewarded callback or ad-state restoration failed.");
+                    }
+
+                    ui.TogglePause();
+                    if (!ui.IsPaused ||
+                        Time.timeScale != 0f ||
+                        player.MovementEnabled)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Pause menu did not activate before the rewarded ad.");
+                    }
+
+                    if (game.Energy >
+                        EnergyRegenerationSystem.MaxEnergy - 3)
+                    {
+                        game.SpendEnergy(3);
+                    }
+
+                    rewardedEnergyBefore = game.Energy;
+                    rewardedRequestedAt = Time.unscaledTime;
+                    rewardedOpenedAt = Time.realtimeSinceStartup;
+                    rewardedAdvertisementOpened = false;
+                    rewardedTimeScaleBefore = Time.timeScale;
+                    rewardedAudioPauseBefore = AudioListener.pause;
+                    rewardedMovementBefore = player.MovementEnabled;
+                    ui.ShowRewardedEnergy();
+                    if (game.Energy != rewardedEnergyBefore ||
+                        bridge.LastRewardId !=
+                            YandexGamesBridge.EnergyRewardId)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Paused rewarded request granted early or used a wrong ID.");
+                    }
+
+                    SessionState.SetString(
+                        SessionKey,
+                        "paused_reward_wait");
+                }
+                catch (System.Exception exception)
+                {
+                    Debug.LogException(exception);
+                    SessionState.EraseString(SessionKey);
+                    EditorApplication.update -= Tick;
+                    if (Application.isBatchMode)
+                    {
+                        EditorApplication.Exit(1);
+                    }
+                }
+
+                return;
+            }
+
+            if (stage == "paused_reward_wait" &&
+                EditorApplication.isPlaying)
+            {
+                try
+                {
+                    GameManager game = Object.FindObjectOfType<GameManager>();
+                    UIManager ui = Object.FindObjectOfType<UIManager>();
+                    ExplorationSystem exploration =
+                        Object.FindObjectOfType<ExplorationSystem>();
+                    YandexGamesBridge bridge =
+                        Object.FindObjectOfType<YandexGamesBridge>();
+                    PlayerController2D player =
+                        Object.FindObjectOfType<PlayerController2D>();
+
+                    if (bridge != null &&
+                        bridge.IsAdvertisementOpen &&
+                        !rewardedAdvertisementOpened)
+                    {
+                        rewardedAdvertisementOpened = true;
+                        rewardedOpenedAt = Time.realtimeSinceStartup;
+                    }
+
+                    if (game != null &&
+                        game.Energy == rewardedEnergyBefore)
+                    {
+                        bool stillOpening =
+                            !rewardedAdvertisementOpened &&
+                            Time.unscaledTime - rewardedRequestedAt < 10f;
+                        bool stillShowing =
+                            rewardedAdvertisementOpened &&
+                            Time.realtimeSinceStartup - rewardedOpenedAt < 5f;
+                        if (stillOpening || stillShowing)
+                        {
+                            return;
+                        }
+                    }
+
+                    bool rewardGranted =
+                        game != null &&
+                        game.Energy == rewardedEnergyBefore + 3;
+                    bool userPausePreserved =
+                        bridge != null &&
+                        ui != null &&
+                        player != null &&
+                        !bridge.IsAdvertisementOpen &&
+                        ui.IsPaused &&
+                        AudioListener.pause == rewardedAudioPauseBefore &&
+                        Mathf.Approximately(
+                            Time.timeScale,
+                            rewardedTimeScaleBefore) &&
+                        player.MovementEnabled == rewardedMovementBefore;
+                    if (rewardGranted &&
+                        (bridge == null ||
+                         bridge.IsRewardedRequestPending ||
+                         !userPausePreserved) &&
+                        Time.realtimeSinceStartup - rewardedOpenedAt < 10f)
+                    {
+                        return;
+                    }
+
+                    if (game == null || ui == null || exploration == null ||
+                        bridge == null || player == null ||
+                        !rewardGranted ||
+                        !userPausePreserved)
+                    {
+                        throw new System.InvalidOperationException(
+                            "Rewarded ad resumed a user-paused game.");
+                    }
+
+                    ui.TogglePause();
+                    if (ui.IsPaused ||
+                        Time.timeScale <= 0f ||
+                        !player.MovementEnabled)
+                    {
+                        throw new System.InvalidOperationException(
+                            "User pause could not be closed after the rewarded ad.");
+                    }
+
+                    exploration.ResolveWorldDiscovery(
+                        ExplorationResultType.Nothing);
                     if (!ui.ResultCardVisible)
                     {
                         throw new System.InvalidOperationException(
@@ -747,7 +1431,7 @@ namespace Monstrology.Editor
             if (stage == "result_wait" && EditorApplication.isPlaying)
             {
                 float shownAt = SessionState.GetFloat(ResultShownAtKey, 0f);
-                if (Time.unscaledTime - shownAt < 3.6f)
+                if (Time.unscaledTime - shownAt < 5f)
                 {
                     return;
                 }

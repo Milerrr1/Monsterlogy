@@ -18,6 +18,38 @@ namespace Monstrology
         public Sprite portraitSprite;
         public Sprite worldSprite;
         public Sprite evolutionSprite;
+        public Vector2 headAnchorOffset;
+        public Vector2 bodyAnchorOffset;
+        public Vector2 legAnchorOffset;
+    }
+
+    [Serializable]
+    public class BiomeDecorationEntry
+    {
+        public string id;
+        public Sprite sprite;
+        public Vector2 targetWorldSize = Vector2.one;
+        [Min(0f)] public float spawnWeight = 1f;
+        [Min(0)] public int minCount = 1;
+        [Min(0)] public int maxCount = 2;
+        [Min(0f)] public float minimumDistance = 1.5f;
+        public Vector2 colliderSize = new Vector2(0.5f, 0.2f);
+        public Vector2 colliderOffset = new Vector2(0f, 0.1f);
+        public Vector2 scaleVariation = new Vector2(0.9f, 1.1f);
+        public bool allowFlipX = true;
+        public bool blocksMovement;
+    }
+
+    [Serializable]
+    public class BiomeVisualConfig
+    {
+        public Sprite groundDetail;
+        public bool groundDetailEnabled = true;
+        [Range(0f, 1f)] public float groundDetailOpacity = 0.2f;
+        public Vector2 backgroundWorldSize = new Vector2(30f, 18f);
+        public Vector2 groundTileWorldSize = new Vector2(8f, 8f);
+        public List<BiomeDecorationEntry> decorations =
+            new List<BiomeDecorationEntry>();
     }
 
     [Serializable]
@@ -27,6 +59,7 @@ namespace Monstrology
         public Sprite background;
         public Sprite primaryDecoration;
         public Sprite secondaryDecoration;
+        public BiomeVisualConfig visualConfig = new BiomeVisualConfig();
     }
 
     [Serializable]
@@ -137,6 +170,27 @@ namespace Monstrology
             return (entry != null ? entry.evolutionSprite : null) ??
                    (data != null ? data.evolutionSprite : null) ??
                    GetCreatureWorld(data);
+        }
+
+        public Vector2 GetCreatureAnchorOffset(
+            CreatureData data,
+            AccessorySlot slot)
+        {
+            CreatureSpriteEntry entry = FindCreature(data != null ? data.id : null);
+            if (entry == null)
+            {
+                return Vector2.zero;
+            }
+
+            switch (slot)
+            {
+                case AccessorySlot.Head:
+                    return entry.headAnchorOffset;
+                case AccessorySlot.Body:
+                    return entry.bodyAnchorOffset;
+                default:
+                    return entry.legAnchorOffset;
+            }
         }
 
         public bool HasCreatureArtwork(CreatureData data)
@@ -294,6 +348,18 @@ namespace Monstrology
             Sprite assigned = entry != null
                 ? secondary ? entry.secondaryDecoration : entry.primaryDecoration
                 : null;
+            if (assigned == null &&
+                entry != null &&
+                entry.visualConfig != null &&
+                entry.visualConfig.decorations != null)
+            {
+                int index = secondary ? 1 : 0;
+                if (entry.visualConfig.decorations.Count > index)
+                {
+                    assigned = entry.visualConfig.decorations[index].sprite;
+                }
+            }
+
             if (assigned != null)
             {
                 return assigned;
@@ -308,6 +374,21 @@ namespace Monstrology
                     primaryDecorationFallback,
                     RuntimeSpriteShape.Circle,
                     "Primary Biome Decoration");
+        }
+
+        public BiomeVisualConfig GetBiomeVisualConfig(BiomeType biome)
+        {
+            BiomeSpriteEntry entry = FindBiome(biome);
+            return entry != null ? entry.visualConfig : null;
+        }
+
+        public bool HasBiomeDecorationSet(BiomeType biome)
+        {
+            BiomeVisualConfig config = GetBiomeVisualConfig(biome);
+            return config != null &&
+                   config.decorations != null &&
+                   config.decorations.Exists(decoration =>
+                       decoration != null && decoration.sprite != null);
         }
 
         public Sprite GetPlayer()

@@ -30,6 +30,8 @@ namespace Monstrology
             portrait = portraitImage;
             speciesText = speciesLabel;
             nameInput = customNameInput;
+            nameInput.characterLimit =
+                CreatureCollectionManager.MaxCustomNameLength;
 
             acceptButton.onClick.AddListener(Accept);
             declineButton.onClick.AddListener(Decline);
@@ -46,9 +48,9 @@ namespace Monstrology
             pendingSpecies = species;
             completed = onCompleted;
             speciesText.text =
-                "Новый вид открыт в энциклопедии:\n" +
+                "Новый вид открыт и добавлен в питомцы:\n" +
                 species.creatureName +
-                "\n\nДобавить питомца в личную коллекцию?";
+                "\n\nМожно сразу дать ему имя или оставить стандартное.";
             portrait.sprite = SpriteDatabase.Active.GetCreaturePortrait(species);
             portrait.color = SpriteDatabase.Active.HasCreatureArtwork(species)
                 ? Color.white
@@ -61,14 +63,18 @@ namespace Monstrology
 
         public void Decline()
         {
-            Finish(false);
+            Finish(collection.GetPetBySpecies(
+                pendingSpecies != null ? pendingSpecies.id : string.Empty) != null);
         }
 
         private void Accept()
         {
-            bool added = pendingSpecies != null &&
-                         collection.AddPet(pendingSpecies.id, nameInput.text) != null;
-            Finish(added);
+            CreatureInstance pet = pendingSpecies != null
+                ? collection.AddPet(pendingSpecies.id)
+                : null;
+            bool saved = pet != null &&
+                         collection.RenamePet(pet.uniqueId, nameInput.text);
+            Finish(saved);
         }
 
         private void Finish(bool accepted)

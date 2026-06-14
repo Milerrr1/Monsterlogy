@@ -6,6 +6,9 @@
 Инструкция по личным питомцам, сохранению экземпляров и окну коллекции:
 [`PETS_SYSTEM_SETUP.md`](PETS_SYSTEM_SETUP.md).
 
+Интеграция первого графического пакета Леса:
+[`FOREST_ART_PACK_GUIDE.md`](FOREST_ART_PACK_GUIDE.md).
+
 ## Быстрый запуск
 
 1. Откройте `Assets/Scenes/SampleScene.unity`.
@@ -264,3 +267,43 @@ safe zone `10%`, фронтальный симметричный вид и пр�
 `Tools > Monstrology > Validate Creature Template` или одноимённый `ContextMenu`
 компонента `CreatureVisualValidator`. Успех отмечается маркером
 `CREATURE_TEMPLATE_VALIDATION_PASS`.
+
+## Контент Хлебокота и Пылесосорога
+
+Первые финальные PNG Хлебокота, Пылесосорога и комплекта следопыта подключаются
+повторяемой командой:
+
+`Tools > Monstrology > Install Forest Content`
+
+Она настраивает импорт, восстанавливает ожидаемые пути и делает upsert записей
+`SpriteDatabase` без дубликатов. Проверка доступна через:
+
+`Tools > Monstrology > Validate Forest Content`
+
+Успешный отчёт заканчивается маркером `FOREST_CONTENT_VALIDATION_PASS`.
+Пустынная интеграция Пылесосорога проверяется отдельно:
+
+`Tools > Monstrology > Validate Desert Content`
+
+Успешный отчёт заканчивается маркером `DESERT_CONTENT_VALIDATION_PASS`.
+
+Хлебокот использует ресурс `bread_crumbs`. Пылесосорог относится к Пустыне,
+имеет базовый вес появления `0.10` и использует Песчаный фильтр. Стабильный
+ID ресурса `forest_battery` сохранён для совместимости со старыми сохранениями.
+`forest_set` состоит из `forest_hat`, `forest_scarf`, `forest_boots` и даёт
+бонусы `5%`, `10%`, `3%`.
+
+## Финальное обновление демоверсии
+
+Аудит, команды проверки, мобильное управление, safe area, миграции,
+накопительные эволюции и баланс первого часа описаны в:
+
+- `FINAL_DEMO_UPDATE_AUDIT.md`;
+- `FINAL_DEMO_UPDATE_GUIDE.md`;
+- `FIRST_HOUR_BALANCE_REPORT.md`.
+
+Основные команды:
+
+- `Tools > Monstrology > Apply Final Demo Update`;
+- `Tools > Monstrology > Validate Final Demo Update`;
+- `Tools > Monstrology > Balance > Simulate First Hour`.

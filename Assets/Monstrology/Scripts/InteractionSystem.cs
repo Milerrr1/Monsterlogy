@@ -12,8 +12,10 @@ namespace Monstrology
         private Button interactButton;
         private WorldPickup nearestPickup;
         private bool interactionEnabled = true;
+        private bool mobileMode;
 
         public WorldPickup NearestPickup { get { return nearestPickup; } }
+        public bool InteractionEnabled { get { return interactionEnabled; } }
 
         private void Awake()
         {
@@ -63,6 +65,12 @@ namespace Monstrology
             RefreshPrompt();
         }
 
+        public void SetMobileMode(bool value)
+        {
+            mobileMode = value;
+            RefreshPrompt();
+        }
+
         public void Interact()
         {
             if (!interactionEnabled || nearestPickup == null)
@@ -109,7 +117,7 @@ namespace Monstrology
             bool visible = interactionEnabled && nearestPickup != null;
             if (promptText != null)
             {
-                promptText.gameObject.SetActive(visible);
+                promptText.gameObject.SetActive(visible && !mobileMode);
                 promptText.text = visible
                     ? "Нажмите E — " + nearestPickup.DisplayName
                     : string.Empty;
@@ -117,7 +125,8 @@ namespace Monstrology
 
             if (interactButton != null)
             {
-                interactButton.gameObject.SetActive(interactionEnabled);
+                interactButton.gameObject.SetActive(
+                    interactionEnabled && mobileMode);
                 interactButton.interactable = visible;
             }
         }

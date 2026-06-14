@@ -56,6 +56,18 @@ namespace Monstrology
         public bool IntroCompleted { get { return progress.introCompleted; } }
         public string LastDailyRewardUtcDate { get { return progress.lastDailyRewardUtcDate; } }
         public int DailyRewardStreak { get { return Mathf.Clamp(progress.dailyRewardStreak, 0, 7); } }
+        public bool DailyRewardFirstLaunchRegistered
+        {
+            get { return progress.dailyRewardFirstLaunchRegistered; }
+        }
+        public string DailyRewardFirstLaunchUtcDate
+        {
+            get { return progress.dailyRewardFirstLaunchUtcDate; }
+        }
+        public int PetMigrationVersion
+        {
+            get { return Mathf.Max(0, progress.petMigrationVersion); }
+        }
         public TimeOfDay CurrentTimeOfDay { get { return ParseTimeOfDay(progress.timeOfDay); } }
         public WeatherType CurrentWeather { get { return ParseWeather(progress.weather); } }
         public float WorldTime01 { get { return Mathf.Repeat(progress.worldTime01, 1f); } }
@@ -64,6 +76,8 @@ namespace Monstrology
 
         private GameProgress progress;
         private readonly Dictionary<string, int> creatureCounts = new Dictionary<string, int>();
+        private readonly Dictionary<string, int> lifetimeCreatureCounts =
+            new Dictionary<string, int>();
         private readonly Dictionary<string, int> itemCounts = new Dictionary<string, int>();
         private readonly Dictionary<string, int> trackCounts = new Dictionary<string, int>();
 
@@ -78,6 +92,14 @@ namespace Monstrology
             Instance = this;
         }
 
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
+
         public void Initialize(GameContent gameContent)
         {
             content = gameContent ?? new GameContent();
@@ -85,8 +107,10 @@ namespace Monstrology
             progress = SaveSystem.Load();
             EnsureProgressDefaults();
             ReadEntries(progress.creatures, creatureCounts);
+            ReadEntries(progress.lifetimeCreatures, lifetimeCreatureCounts);
             ReadEntries(progress.items, itemCounts);
             ReadEntries(progress.tracks, trackCounts);
+            MigrateLifetimeCreatureCounts();
             foreach (KeyValuePair<string, int> entry in creatureCounts)
             {
                 if (entry.Value > 0 && !progress.discoveredSpecies.Contains(entry.Key))
@@ -199,6 +223,30 @@ namespace Monstrology
             Save();
         }
 
+        public void RegisterDailyRewardFirstLaunch(string utcDate)
+        {
+            if (progress.dailyRewardFirstLaunchRegistered)
+            {
+                return;
+            }
+
+            progress.dailyRewardFirstLaunchRegistered = true;
+            progress.dailyRewardFirstLaunchUtcDate = utcDate ?? string.Empty;
+            Save();
+        }
+
+        public void MarkPetMigrationComplete(int migrationVersion)
+        {
+            int normalized = Mathf.Max(0, migrationVersion);
+            if (progress.petMigrationVersion >= normalized)
+            {
+                return;
+            }
+
+            progress.petMigrationVersion = normalized;
+            Save();
+        }
+
         public void SaveNow()
         {
             Save();
@@ -228,6 +276,8 @@ namespace Monstrology
             }
 
             creatureCounts[creature.id] = GetCreatureCount(creature.id) + 1;
+            lifetimeCreatureCounts[creature.id] =
+                GetLifetimeCreatureCount(creature.id) + 1;
             progress.totalCreaturesFound++;
             int reward = GetDiscoveryReward(creature.rarity, firstDiscovery);
             progress.coins += reward;
@@ -253,19 +303,27 @@ namespace Monstrology
 
         public void AddCreatureCopies(string creatureId, int amount)
         {
-            if (string.IsNullOrEmpty(creatureId) || amount <= 0 || GetCreature(creatureId) == null)
+            CreatureData creature = GetCreature(creatureId);
+            if (string.IsNullOrEmpty(creatureId) || amount <= 0 || creature == null)
             {
                 return;
             }
 
+            bool firstDiscovery = !IsCreatureFound(creatureId);
             creatureCounts[creatureId] = GetCreatureCount(creatureId) + amount;
-            if (!progress.discoveredSpecies.Contains(creatureId))
+            lifetimeCreatureCounts[creatureId] =
+                GetLifetimeCreatureCount(creatureId) + amount;
+            if (firstDiscovery)
             {
                 progress.discoveredSpecies.Add(creatureId);
             }
 
             progress.totalCreaturesFound += amount;
             Save();
+            if (CreatureRegistered != null)
+            {
+                CreatureRegistered(creature, firstDiscovery);
+            }
         }
 
         public bool ConsumeCreatureCopies(string creatureId, int amount)
@@ -310,6 +368,21 @@ namespace Monstrology
         {
             int value;
             return creatureCounts.TryGetValue(creatureId, out value) ? value : 0;
+        }
+
+        public int GetLifetimeCreatureCount(string creatureId)
+        {
+            int value;
+            return lifetimeCreatureCounts.TryGetValue(creatureId, out value)
+                ? value
+                : 0;
+        }
+
+        public string GetEvolutionRootSpeciesId(string speciesId)
+        {
+            return EvolutionProgressUtility.GetRootSpeciesId(
+                content,
+                speciesId);
         }
 
         public int GetItemCount(string itemId)
@@ -802,6 +875,7 @@ namespace Monstrology
             progress = SaveSystem.Load();
             EnsureProgressDefaults();
             creatureCounts.Clear();
+            lifetimeCreatureCounts.Clear();
             itemCounts.Clear();
             trackCounts.Clear();
             CurrentBiome = GetBiome(BiomeType.Forest);
@@ -845,6 +919,8 @@ namespace Monstrology
         private void Save()
         {
             progress.creatures = WriteEntries(creatureCounts);
+            progress.lifetimeCreatures =
+                WriteEntries(lifetimeCreatureCounts);
             progress.items = WriteEntries(itemCounts);
             progress.tracks = WriteEntries(trackCounts);
             SaveSystem.Save(progress);
@@ -854,6 +930,13 @@ namespace Monstrology
             if (YandexGamesBridge.Instance != null)
             {
                 YandexGamesBridge.Instance.SaveProgress();
+            }
+
+            CloudSaveCoordinator cloud =
+                FindObjectOfType<CloudSaveCoordinator>();
+            if (cloud != null)
+            {
+                cloud.NotifyLocalSave();
             }
         }
 
@@ -888,6 +971,8 @@ namespace Monstrology
             }
 
             progress.creatures = progress.creatures ?? new List<StringIntEntry>();
+            progress.lifetimeCreatures =
+                progress.lifetimeCreatures ?? new List<StringIntEntry>();
             progress.discoveredSpecies = progress.discoveredSpecies ?? new List<string>();
             progress.items = progress.items ?? new List<StringIntEntry>();
             progress.tracks = progress.tracks ?? new List<StringIntEntry>();
@@ -925,6 +1010,30 @@ namespace Monstrology
             progress.foundBiomeEvents = progress.foundBiomeEvents ?? new List<string>();
             progress.lastDailyRewardUtcDate = progress.lastDailyRewardUtcDate ?? string.Empty;
             progress.dailyRewardStreak = Mathf.Clamp(progress.dailyRewardStreak, 0, 7);
+            progress.dailyRewardFirstLaunchUtcDate =
+                progress.dailyRewardFirstLaunchUtcDate ?? string.Empty;
+            if (loadedVersion < 10 &&
+                !progress.dailyRewardFirstLaunchRegistered)
+            {
+                progress.dailyRewardFirstLaunchRegistered = true;
+                DateTime accountCreated;
+                progress.dailyRewardFirstLaunchUtcDate =
+                    DateTime.TryParse(
+                        progress.accountCreatedUtc,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out accountCreated)
+                        ? accountCreated.ToUniversalTime().ToString(
+                            "yyyy-MM-dd",
+                            CultureInfo.InvariantCulture)
+                        : DateTime.UtcNow.ToString(
+                            "yyyy-MM-dd",
+                            CultureInfo.InvariantCulture);
+            }
+            progress.petMigrationVersion =
+                Mathf.Max(0, progress.petMigrationVersion);
+            progress.saveRevision = Math.Max(0L, progress.saveRevision);
+            progress.updatedAtUtc = progress.updatedAtUtc ?? string.Empty;
             string now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             progress.lastEnergyUtc = string.IsNullOrEmpty(progress.lastEnergyUtc)
                 ? now
@@ -947,7 +1056,53 @@ namespace Monstrology
                 : progress.weather;
             progress.worldTime01 = Mathf.Repeat(progress.worldTime01, 1f);
             progress.weatherTimer = Mathf.Max(0f, progress.weatherTimer);
-            progress.version = Mathf.Max(progress.version, 8);
+            progress.version = Mathf.Max(progress.version, 10);
+        }
+
+        private void MigrateLifetimeCreatureCounts()
+        {
+            foreach (KeyValuePair<string, int> entry in creatureCounts)
+            {
+                int currentLifetime = GetLifetimeCreatureCount(entry.Key);
+                lifetimeCreatureCounts[entry.Key] =
+                    Mathf.Max(currentLifetime, entry.Value);
+            }
+
+            if (progress.pets == null)
+            {
+                return;
+            }
+
+            foreach (CreatureInstance pet in progress.pets)
+            {
+                if (pet == null || string.IsNullOrEmpty(pet.speciesId))
+                {
+                    continue;
+                }
+
+                string root = EvolutionProgressUtility.GetRootSpeciesId(
+                    content,
+                    pet.speciesId);
+                int stage = Mathf.Max(
+                    pet.evolutionStage,
+                    EvolutionProgressUtility.GetSpeciesStage(
+                        content,
+                        pet.speciesId));
+                pet.evolutionRootSpeciesId = string.IsNullOrEmpty(root)
+                    ? pet.speciesId
+                    : root;
+                pet.evolutionStage = stage;
+                if (stage > 0)
+                {
+                    int floor = EvolutionProgressUtility
+                        .GetThresholdForTransition(stage - 1);
+                    lifetimeCreatureCounts[pet.evolutionRootSpeciesId] =
+                        Mathf.Max(
+                            GetLifetimeCreatureCount(
+                                pet.evolutionRootSpeciesId),
+                            floor);
+                }
+            }
         }
 
         private void EnsureContentDefaults()

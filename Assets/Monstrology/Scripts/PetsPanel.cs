@@ -169,7 +169,7 @@ namespace Monstrology
                 "UpgradeInfo",
                 center,
                 resource != null
-                    ? "Ресурс: " + resource.itemName +
+                    ? "Ресурс: " + resource.GetVisibleName(game) +
                       "\nВ наличии: " + owned + " / Нужно: " + required
                     : "Прокачка для этого питомца пока недоступна.",
                 14,

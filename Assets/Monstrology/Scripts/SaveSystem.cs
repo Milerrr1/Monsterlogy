@@ -20,7 +20,7 @@ namespace Monstrology
     [Serializable]
     public class GameProgress
     {
-        public int version = 8;
+        public int version = 10;
         public int coins = SaveSystem.DefaultCoins;
         public int energy = SaveSystem.DefaultEnergy;
         public string currentBiome = BiomeType.Forest.ToString();
@@ -30,6 +30,7 @@ namespace Monstrology
         public List<string> unlockedBiomes = new List<string>();
         public List<string> discoveredSpecies = new List<string>();
         public List<StringIntEntry> creatures = new List<StringIntEntry>();
+        public List<StringIntEntry> lifetimeCreatures = new List<StringIntEntry>();
         public List<StringIntEntry> items = new List<StringIntEntry>();
         public List<StringIntEntry> tracks = new List<StringIntEntry>();
         public List<string> claimedQuests = new List<string>();
@@ -53,6 +54,11 @@ namespace Monstrology
         public bool introCompleted;
         public string lastDailyRewardUtcDate;
         public int dailyRewardStreak;
+        public bool dailyRewardFirstLaunchRegistered;
+        public string dailyRewardFirstLaunchUtcDate;
+        public int petMigrationVersion;
+        public long saveRevision;
+        public string updatedAtUtc;
     }
 
     public static class SaveSystem
@@ -60,10 +66,28 @@ namespace Monstrology
         public const int DefaultCoins = 50;
         public const int DefaultEnergy = 75;
         private const string SaveKey = "Monstrology.Progress.v1";
+        private const string BackupKey = "Monstrology.Progress.Backup.v1";
+
+        public static bool HasLocalSave
+        {
+            get { return PlayerPrefs.HasKey(SaveKey); }
+        }
 
         public static void Save(GameProgress progress)
         {
+            if (progress == null)
+            {
+                return;
+            }
+
+            progress.saveRevision = Math.Max(0L, progress.saveRevision) + 1L;
+            progress.updatedAtUtc = DateTime.UtcNow.ToString("o");
             PlayerPrefs.SetString(SaveKey, JsonUtility.ToJson(progress));
+            Flush();
+        }
+
+        public static void Flush()
+        {
             PlayerPrefs.Save();
         }
 
@@ -89,7 +113,112 @@ namespace Monstrology
         public static void Delete()
         {
             PlayerPrefs.DeleteKey(SaveKey);
+            PlayerPrefs.DeleteKey(BackupKey);
             PlayerPrefs.Save();
+        }
+
+        public static string GetStoredJson()
+        {
+            return PlayerPrefs.GetString(SaveKey, string.Empty);
+        }
+
+        public static string GetBackupJson()
+        {
+            return PlayerPrefs.GetString(BackupKey, string.Empty);
+        }
+
+        public static bool TryDeserialize(
+            string json,
+            out GameProgress progress)
+        {
+            progress = null;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            try
+            {
+                progress = JsonUtility.FromJson<GameProgress>(json);
+                return progress != null;
+            }
+            catch (Exception)
+            {
+                progress = null;
+                return false;
+            }
+        }
+
+        public static int CompareFreshness(
+            GameProgress first,
+            GameProgress second)
+        {
+            if (ReferenceEquals(first, second))
+            {
+                return 0;
+            }
+
+            if (first == null)
+            {
+                return -1;
+            }
+
+            if (second == null)
+            {
+                return 1;
+            }
+
+            int revisionComparison =
+                first.saveRevision.CompareTo(second.saveRevision);
+            if (revisionComparison != 0)
+            {
+                return revisionComparison;
+            }
+
+            DateTime firstUpdated;
+            DateTime secondUpdated;
+            bool hasFirstDate =
+                DateTime.TryParse(first.updatedAtUtc, out firstUpdated);
+            bool hasSecondDate =
+                DateTime.TryParse(second.updatedAtUtc, out secondUpdated);
+            if (hasFirstDate != hasSecondDate)
+            {
+                return hasFirstDate ? 1 : -1;
+            }
+
+            if (!hasFirstDate)
+            {
+                return 0;
+            }
+
+            return firstUpdated.ToUniversalTime().CompareTo(
+                secondUpdated.ToUniversalTime());
+        }
+
+        public static bool ImportIfNewer(string remoteJson)
+        {
+            GameProgress remote;
+            if (!TryDeserialize(remoteJson, out remote))
+            {
+                return false;
+            }
+
+            string localJson = GetStoredJson();
+            GameProgress local;
+            if (TryDeserialize(localJson, out local) &&
+                CompareFreshness(remote, local) <= 0)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(localJson))
+            {
+                PlayerPrefs.SetString(BackupKey, localJson);
+            }
+
+            PlayerPrefs.SetString(SaveKey, remoteJson);
+            Flush();
+            return true;
         }
 
         private static GameProgress CreateDefault()

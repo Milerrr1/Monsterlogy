@@ -33,7 +33,7 @@ namespace Monstrology
                 visual.sprite = SpriteDatabase.Active.GetAccessory(accessory);
                 visual.preserveAspect = true;
                 visual.raycastTarget = false;
-                PlaceVisual(visual.rectTransform, accessory.slot);
+                PlaceVisual(visual.rectTransform, accessory);
             }
         }
 
@@ -72,8 +72,11 @@ namespace Monstrology
             return anchor;
         }
 
-        private static void PlaceVisual(RectTransform rect, AccessorySlot slot)
+        private static void PlaceVisual(
+            RectTransform rect,
+            AccessoryData accessory)
         {
+            AccessorySlot slot = accessory.slot;
             Vector2 normalizedSize =
                 CreatureBaseTemplate.Active.GetAccessorySize(slot);
             RectTransform portrait = rect.parent.parent as RectTransform;
@@ -81,14 +84,24 @@ namespace Monstrology
                 ? portrait.rect.size
                 : new Vector2(100f, 100f);
             Vector2 size = new Vector2(
-                parentSize.x * normalizedSize.x,
-                parentSize.y * normalizedSize.y);
+                parentSize.x * normalizedSize.x *
+                    Mathf.Max(
+                        0.01f,
+                        Mathf.Abs(accessory.GetUiVisualScale().x)),
+                parentSize.y * normalizedSize.y *
+                    Mathf.Max(
+                        0.01f,
+                        Mathf.Abs(accessory.GetUiVisualScale().y)));
+            Vector2 visualOffset = accessory.GetUiVisualOffset();
+            Vector2 offset = new Vector2(
+                parentSize.x * normalizedSize.x * visualOffset.x,
+                parentSize.y * normalizedSize.y * visualOffset.y);
             UIFactory.SetRect(
                 rect,
                 new Vector2(0.5f, 0.5f),
                 new Vector2(0.5f, 0.5f),
                 new Vector2(0.5f, 0.5f),
-                Vector2.zero,
+                offset,
                 size);
         }
     }

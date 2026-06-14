@@ -60,8 +60,7 @@ namespace Monstrology
             foreach (CreatureData creature in game.Content.creatures
                          .Where(creature => creature != null &&
                                             !string.IsNullOrEmpty(creature.id) &&
-                                            (game.IsCreatureFound(creature.id) ||
-                                             collection.GetPetBySpecies(creature.id) != null))
+                                            collection.GetPetBySpecies(creature.id) != null)
                          .OrderBy(creature => creature.creatureName))
             {
                 if (!speciesIds.Contains(creature.id))
@@ -144,7 +143,14 @@ namespace Monstrology
             }
 
             CreatureData current = game.GetCreature(selectedSpeciesId);
-            int copies = game.GetCreatureCount(selectedSpeciesId);
+            CreatureInstance pet =
+                collection.GetPetBySpecies(selectedSpeciesId);
+            string rootSpeciesId = pet != null &&
+                                   !string.IsNullOrEmpty(
+                                       pet.evolutionRootSpeciesId)
+                ? pet.evolutionRootSpeciesId
+                : game.GetEvolutionRootSpeciesId(selectedSpeciesId);
+            int copies = game.GetLifetimeCreatureCount(rootSpeciesId);
             if (evolution == null || string.IsNullOrEmpty(evolution.resultSpeciesId))
             {
                 details.text = "Текущий вид: " +

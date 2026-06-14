@@ -110,10 +110,13 @@ namespace Monstrology
 
             Texture2D texture = sprite.texture;
             if (texture == null ||
-                texture.width != CreatureBaseTemplate.TargetTextureSize ||
-                texture.height != CreatureBaseTemplate.TargetTextureSize)
+                texture.width > CreatureBaseTemplate.TargetTextureSize ||
+                texture.height > CreatureBaseTemplate.TargetTextureSize ||
+                texture.width != texture.height)
             {
-                warnings.Add(label + ": исходная текстура должна быть 2048x2048.");
+                warnings.Add(
+                    label +
+                    ": текстура должна быть квадратной и не превышать 2048x2048.");
             }
 
             Vector2 normalizedPivot = new Vector2(

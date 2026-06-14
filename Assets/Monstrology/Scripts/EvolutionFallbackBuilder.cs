@@ -166,17 +166,8 @@ namespace Monstrology
 
         private static int CopiesForTransition(int currentForm)
         {
-            if (currentForm <= 1)
-            {
-                return 100;
-            }
-
-            if (currentForm == 2)
-            {
-                return 250;
-            }
-
-            return 500;
+            return EvolutionProgressUtility.GetThresholdForTransition(
+                Mathf.Max(0, currentForm - 1));
         }
 
         private static CreatureRarity UpgradeRarity(

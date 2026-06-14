@@ -1,0 +1,83 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 31db1ce7d7809c345a368b4d2acea335, type: 3}
+  m_Name: FirstHourBalanceConfig
+  m_EditorClassIdentifier: 
+  creatureWeight: 0.18
+  traceWeight: 0.16
+  resourceWeight: 0.31
+  eggWeight: 0.05
+  accessoryWeight: 0.1
+  emptyWeight: 0.06
+  nestAndEventWeight: 0.04
+  phaseOneEndMinutes: 10
+  phaseTwoEndMinutes: 25
+  phaseThreeEndMinutes: 40
+  firstHourEndMinutes: 60
+  phaseZeroToTen:
+    creature: 1.55
+    trace: 1.35
+    resource: 1.15
+    egg: 0.6
+    accessory: 0.35
+    empty: 0
+    rareCreature: 0
+    newContent: 1.8
+  phaseTenToTwentyFive:
+    creature: 1.2
+    trace: 1
+    resource: 1.2
+    egg: 0.8
+    accessory: 2
+    empty: 0.7
+    rareCreature: 0.55
+    newContent: 1.5
+  phaseTwentyFiveToForty:
+    creature: 1.35
+    trace: 1.25
+    resource: 1.25
+    egg: 1
+    accessory: 1.35
+    empty: 0.9
+    rareCreature: 0.85
+    newContent: 1.25
+  phaseFortyToSixty:
+    creature: 1.1
+    trace: 1.15
+    resource: 1.15
+    egg: 1
+    accessory: 1.1
+    empty: 1
+    rareCreature: 1
+    newContent: 1.1
+  longTerm:
+    creature: 1
+    trace: 1
+    resource: 1
+    egg: 1
+    accessory: 1
+    empty: 1
+    rareCreature: 1
+    newContent: 1
+  protectedOpeningFindings: 5
+  maxEmptyStreak: 2
+  maxSameResourceStreak: 3
+  newContentPityMinutes: 6
+  wardrobePityMinutes: 10
+  firstHourWardrobeSoftCap: 2
+  wardrobeAfterSoftCapMultiplier: 0.03
+  rareLockMinutes: 8
+  rareHintPityMinutes: 18
+  pityMultiplier: 2.25
+  nearEvolutionCreatureMultiplier: 2.1
+  nearEvolutionMinimumCopies: 4
+  pickupCooldownSeconds: 0.25
